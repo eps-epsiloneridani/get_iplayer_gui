@@ -276,7 +276,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         qualityPopup.addItems(withTitles: ["default", "fhd", "hd", "sd", "web", "mobile", "high", "std", "med", "low"])
         qualityPopup.selectItem(withTitle: "default")
 
-        recordButton.title = "Record Selected"
+        recordButton.title = "Download Selected"
         recordButton.bezelStyle = .rounded
         recordButton.keyEquivalent = "\r"
         recordButton.target = self
@@ -296,6 +296,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         flagsBar.translatesAutoresizingMaskIntoConstraints = false
 
         let flagsLabel = NSTextField(labelWithString: "Flags:")
+        flagsBar.addArrangedSubview(flagsLabel)
         for cb in [forceCheckbox, audioOnlyCheckbox, rawCheckbox, noResumeCheckbox, verboseCheckbox, subtitlesCheckbox] {
             cb.setButtonType(.switch)
             cb.font = NSFont.systemFont(ofSize: 12)
@@ -304,7 +305,6 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         let customLabel = NSTextField(labelWithString: "Custom:")
         customFlagsField.placeholderString = "e.g. --force --audio-only"
         customFlagsField.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        flagsBar.addArrangedSubview(flagsLabel)
         flagsBar.addArrangedSubview(customLabel)
         flagsBar.addArrangedSubview(customFlagsField)
 
@@ -318,7 +318,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         pidField.placeholderString = "e.g. b0abcdef or https://www.bbc.co.uk/iplayer/episode/..."
         pidField.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        recordPidButton.title = "Record"
+        recordPidButton.title = "Download"
         recordPidButton.bezelStyle = .rounded
         recordPidButton.target = self
         recordPidButton.action = #selector(recordPidTapped)
@@ -344,6 +344,8 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         progressLabel.alignment = .right
         progressLabel.widthAnchor.constraint(equalToConstant: 50).isActive = true
 
+        let progressTitle = NSTextField(labelWithString: "Progress:")
+        progressBarRow.addArrangedSubview(progressTitle)
         progressBarRow.addArrangedSubview(progressBar)
         progressBarRow.addArrangedSubview(progressLabel)
 
@@ -483,10 +485,22 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         guard !pids.isEmpty else { return }
         var args: [String] = []
         for p in pids {
-            if p.hasPrefix("http") {
-                args.append("--url=\(p)")
+            let cleaned = p.trimmingCharacters(in: .whitespacesAndNewlines)
+            if cleaned.hasPrefix("http") {
+                // Only accept well-formed http(s) URLs.
+                if let url = URL(string: cleaned), let scheme = url.scheme,
+                   (scheme == "http" || scheme == "https") {
+                    args.append("--url=\(cleaned)")
+                } else {
+                    appendLog("Warning: ignoring invalid URL: \(p)")
+                }
             } else {
-                args.append("--pid=\(p)")
+                // BBC PIDs are alphanumeric.
+                if cleaned.range(of: #"^[A-Za-z0-9]+$"#, options: .regularExpression) != nil {
+                    args.append("--pid=\(cleaned)")
+                } else {
+                    appendLog("Warning: ignoring invalid PID: \(p)")
+                }
             }
         }
         args.append("--get")
@@ -511,13 +525,26 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         if noResumeCheckbox.state == .on { args.append("--no-resume") }
         if verboseCheckbox.state == .on { args.append("--verbose") }
         if subtitlesCheckbox.state == .on { args.append("--subtitles") }
-        // Custom flags (whitespace-separated)
+        // Custom flags (whitespace-separated), filtered to safe flag tokens only.
         let custom = customFlagsField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if !custom.isEmpty {
-            args.append(contentsOf: custom.split(separator: " ").map(String.init))
+            let tokens = custom.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+            let safe = tokens.filter { safeFlagToken($0) }
+            if safe.count != tokens.count {
+                appendLog("Warning: ignored unsafe custom flag(s).")
+            }
+            args.append(contentsOf: safe)
         }
         // Force progress display to be captured even though output is piped (not a terminal).
         args.append("--log-progress")
+    }
+
+    /// Only allow flag-like tokens made of safe characters. Rejects shell
+    /// metacharacters and anything that isn't a `-`-prefixed flag.
+    private func safeFlagToken(_ token: String) -> Bool {
+        guard token.hasPrefix("-") else { return false }
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_=./")
+        return token.unicodeScalars.allSatisfy { allowed.contains($0) }
     }
 
     private func runRecord(args: [String]) {

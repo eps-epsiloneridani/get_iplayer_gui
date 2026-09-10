@@ -71,6 +71,25 @@ All output is streamed into the log console at the bottom of the window.
 - Recordings are saved to your Movies folder by default; change it with the
   **Output** field.
 
+## Security
+
+This app makes **no outbound network connections of its own** and executes only
+the system `get_iplayer` binary via `Process` (no shell, so no shell injection).
+It writes no files and contains no obfuscated code.
+
+A static security scan is included and runs in CI on every push/PR:
+
+```sh
+python3 scripts/security_scan.py
+```
+
+It checks the source, build script, and workflow for backdoor indicators
+(network exfiltration, shell execution, obfuscation, unexpected file writes,
+hardcoded endpoints, external downloads). Defense-in-depth input validation is
+also applied at runtime: the custom-flags field only accepts `-`-prefixed tokens
+of safe characters, and the PID/URL field only accepts alphanumeric PIDs or
+well-formed http(s) URLs.
+
 ## License
 
 [GPL-3.0](LICENSE)
