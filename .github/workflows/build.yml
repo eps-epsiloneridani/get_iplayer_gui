@@ -1,0 +1,33 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Swift toolchain
+        run: swift --version
+
+      - name: Build app bundle
+        run: ./build.sh
+
+      - name: Verify bundle
+        run: |
+          test -d build/get_iplayer_gui.app/Contents/MacOS
+          test -x build/get_iplayer_gui.app/Contents/MacOS/get_iplayer_gui
+          echo "Bundle verified."
+
+      - name: Upload app bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: get_iplayer_gui.app
+          path: build/get_iplayer_gui.app
