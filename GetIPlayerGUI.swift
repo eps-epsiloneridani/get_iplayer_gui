@@ -434,6 +434,16 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         }
     }
 
+    /// Runs `get_iplayer --help` and shows the output in the log console.
+    @objc func showHelp() {
+        appendLog("Fetching get_iplayer help…")
+        runner.run(arguments: ["--help"]) { [weak self] output, _ in
+            guard let self = self else { return }
+            self.appendLog(output)
+            self.statusLabel.stringValue = "get_iplayer help loaded."
+        }
+    }
+
     private func runSearch(term: String, type: String) {
         setBusy(true)
         statusLabel.stringValue = "Searching…"
@@ -721,10 +731,12 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
+    private var viewController: ViewController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupMainMenu()
         let vc = ViewController()
+        viewController = vc
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -771,6 +783,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: "")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        // Help menu
+        let helpMenuItem = NSMenuItem()
+        mainMenu.addItem(helpMenuItem)
+        let helpMenu = NSMenu(title: "Help")
+        helpMenuItem.submenu = helpMenu
+        let helpItem = NSMenuItem(title: "Print Get_iPlayer Help", action: #selector(ViewController.showHelp), keyEquivalent: "")
+        helpItem.target = viewController
+        helpMenu.addItem(helpItem)
 
         NSApp.mainMenu = mainMenu
     }
