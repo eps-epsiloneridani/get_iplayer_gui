@@ -156,7 +156,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     private let recordButton = NSButton()
     private let pidField = NSTextField()
     private let recordPidButton = NSButton()
-    private let pidRecursiveCheckbox = NSButton(checkboxWithTitle: "Record whole series (PID recursive)", target: nil, action: nil)
+    private let pidRecursiveCheckbox = NSButton(checkboxWithTitle: "Record whole series", target: nil, action: nil)
 
     // Recording flags
     private let forceCheckbox = NSButton(checkboxWithTitle: "Force", target: nil, action: nil)
