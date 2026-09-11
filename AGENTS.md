@@ -29,7 +29,7 @@ Requires: Swift toolchain (`swiftc`), macOS 13+, and `get_iplayer` installed at
 
 ```
 gui/
-├── GetIPlayerGUI.swift        # the entire app (single file, ~800 lines)
+├── GetIPlayerGUI.swift        # the entire app (single file, ~920 lines)
 ├── build.sh                   # builds the .app bundle (swiftc + Info.plist + codesign)
 ├── scripts/security_scan.py   # static security scan (backdoor indicators)
 ├── .github/workflows/build.yml    # CI: build + upload artifact
@@ -73,9 +73,10 @@ Single file, three main types:
   series/brand PID downloads every episode (only applies to PIDs, not URLs).
 - **Progress row**: `Progress:` label + determinate progress bar + % label.
 - **Log console**: read-only `NSTextView` (all get_iplayer output streams here).
-- **Status label** at bottom + a blue **Download** button on the PID bar and a
-  **Stop** button at the bottom right (enabled while busy, sends SIGINT via
-  `GetIPlayerRunner.stop()` to gracefully interrupt the running process).
+- **Status label** at bottom + a **Stop** button at the bottom right (enabled
+  while busy, sends SIGINT via `GetIPlayerRunner.stop()` to gracefully interrupt
+  the running process). The **Download** button on the PID bar is the window's
+  default button (blue) via `keyEquivalent = "\r"`.
 
 ### How commands are built
 
@@ -118,6 +119,15 @@ binary is at `/usr/local/bin/get_iplayer`. If the path ever changes, edit the
 
 - Local repo initialized in `gui/`; branch `main`.
 - Commits (newest first):
+  - `ba2e528` Revert PID tab override; keep natural tab to Download
+  - `a7ee85f` Fix accessibility API usage (setAccessibilityLabel / announcement keys)
+  - `0d749a8` Add accessibility labels, Window/Hide menus, Return-key scoping, VoiceOver announcements
+  - `9e74b49` Make Download the Return-key default button; Download Selected no longer is
+  - `8ee0a7c` Fix Download button colour: use bezelColor (later reverted)
+  - `f511649` Add blue Download button accent and graceful Stop button
+  - `34d536c` Add whole-series (--pid-recursive) checkbox to PID download
+  - `c3f112f` Rename HANDOFF.md to AGENTS.md
+  - `00d8660` Add HANDOFF.md
   - `576ac80` Update GetIPlayerGUI.swift (Help menu + label renames)
   - `7137703` Add security scan, CI workflow, and input validation
   - `a1657e1` This is the initial commit
@@ -136,7 +146,10 @@ binary is at `/usr/local/bin/get_iplayer`. If the path ever changes, edit the
 - **Flags bar** added so users can pass flags like `--force`; the `Flags:` label
   must be added to the stack **before** the checkboxes to appear on the left.
 - **Progress bar** added for downloads; `--log-progress` is always appended.
-- Button labels: "Download Selected" (record selected), "Download" (record by PID).
+- Button labels: "Download Selected" (record selected), "Download" (record by
+  PID). The "Download" button is the window's default button (`keyEquivalent = "\r"`)
+  so it activates on Return and appears blue. Do NOT use `bezelColor`/`contentTintColor`
+  to colour it — that was tried then reverted.
 - **Help menu** item "Print Get_iPlayer Help" runs `get_iplayer --help` into the log.
 
 ## Accessibility & keyboard
@@ -147,15 +160,20 @@ binary is at `/usr/local/bin/get_iplayer`. If the path ever changes, edit the
   Search field triggers Search; Return in Output/Custom-flags fields is consumed
   (does nothing) so it doesn't fire Download; Return in the PID field fires
   Download.
-- **VoiceOver labels**: search/output/custom-flags/PID fields, both popups, the
-  progress bar, progress label and status label all have explicit
-  `accessibilityLabel`s.
-- **Live announcements**: `announce(_:)` posts VoiceOver announcements on
-  search/refresh/help/record completion and on guard errors.
+- **VoiceOver labels**: use `setAccessibilityLabel(_:)` (note: `accessibilityLabel`
+  is a read-only method in AppKit, not a settable property — assigning it won't compile).
+  Applied to search/output/custom-flags/PID fields, both popups, the progress bar,
+  progress label and status label.
+- **Live announcements**: `announce(_:)` posts `NSAccessibility.NotificationUserInfoKey.announcement`
+  VoiceOver announcements on search/refresh/help/record completion and on guard errors.
 - **Initial focus**: the search field becomes first responder at launch
   (`ViewController.focusSearch()`).
-- **Table** has `accessibilityLabel = "Search results"; log/status fonts raised
-  to 12pt.
+- **Table** has `accessibilityLabel = "Search results"` (via `setAccessibilityLabel`);
+  log/status fonts raised to 12pt.
+- **Tab order**: left-to-right natural order. Tab from the PID field goes to the
+  **Download** button (default). The recursive checkbox follows it. A `nextKeyView`
+  override to skip Download was added then **reverted** — the user wants the
+  natural tab-to-Download behaviour.
 
 ## Common tasks / where to edit
 
