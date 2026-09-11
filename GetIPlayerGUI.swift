@@ -203,6 +203,13 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         outputDirField.stringValue = docs?.path ?? (FileManager.default.currentDirectoryPath as NSString).appendingPathComponent("recordings")
     }
 
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        // Tab from the "Record by PID/URL" field goes directly to the "Record whole
+        // series" checkbox, skipping the Download button between them.
+        pidField.nextKeyView = pidRecursiveCheckbox
+    }
+
     // MARK: UI construction
 
     private func buildUI() {
