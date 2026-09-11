@@ -340,7 +340,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
 
         recordPidButton.title = "Download"
         recordPidButton.bezelStyle = .rounded
-        recordPidButton.contentTintColor = .controlAccentColor
+        recordPidButton.bezelColor = .controlAccentColor
         recordPidButton.target = self
         recordPidButton.action = #selector(recordPidTapped)
 
