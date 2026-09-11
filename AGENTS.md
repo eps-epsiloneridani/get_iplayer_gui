@@ -66,7 +66,9 @@ Single file, three main types:
 - **Bottom bar**: Output dir field + Browse, Quality popup, "Download Selected" button.
 - **Flags bar**: `Flags:` label, then checkboxes Force / Audio-only / Raw /
   No-resume / Verbose / Subtitles, then `Custom:` free-text field.
-- **PID bar**: "Record by PID/URL:" field + "Download" button.
+- **PID bar**: "Record by PID/URL:" field + "Download" button + "Record whole
+  series (PID recursive)" checkbox. When ticked, `--pid-recursive` is added so a
+  series/brand PID downloads every episode (only applies to PIDs, not URLs).
 - **Progress row**: `Progress:` label + determinate progress bar + % label.
 - **Log console**: read-only `NSTextView` (all get_iplayer output streams here).
 - **Status label** at bottom.
@@ -78,6 +80,7 @@ Single file, three main types:
   so `|` is a safe delimiter.
 - **Download selected**: `get_iplayer <index>... --get --output=<dir> [--quality=<q>] [flags] --log-progress`
 - **Download by PID/URL**: `get_iplayer --pid=<pid>|--url=<url> --get ...`
+  (adds `--pid-recursive` when the whole-series checkbox is ticked and a PID is used)
 - **Refresh**: `get_iplayer --refresh --type=<type>`
 - **Help**: `get_iplayer --help` (menu: Help → "Print Get_iPlayer Help")
 

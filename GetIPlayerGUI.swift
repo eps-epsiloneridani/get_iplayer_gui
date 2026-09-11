@@ -138,6 +138,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     private let recordButton = NSButton()
     private let pidField = NSTextField()
     private let recordPidButton = NSButton()
+    private let pidRecursiveCheckbox = NSButton(checkboxWithTitle: "Record whole series (PID recursive)", target: nil, action: nil)
 
     // Recording flags
     private let forceCheckbox = NSButton(checkboxWithTitle: "Force", target: nil, action: nil)
@@ -327,6 +328,11 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         pidBar.addArrangedSubview(pidField)
         pidBar.addArrangedSubview(recordPidButton)
 
+        pidRecursiveCheckbox.setButtonType(.switch)
+        pidRecursiveCheckbox.font = NSFont.systemFont(ofSize: 12)
+        pidRecursiveCheckbox.toolTip = "If the PID is a series or brand PID, download every related episode. Requires a PID (not a URL)."
+        pidBar.addArrangedSubview(pidRecursiveCheckbox)
+
         // --- Progress bar ---
         let progressBarRow = NSStackView()
         progressBarRow.orientation = .horizontal
@@ -501,6 +507,9 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
                 if let url = URL(string: cleaned), let scheme = url.scheme,
                    (scheme == "http" || scheme == "https") {
                     args.append("--url=\(cleaned)")
+                    if pidRecursiveCheckbox.state == .on {
+                        appendLog("Note: the whole-series option only applies to PIDs, not URLs.")
+                    }
                 } else {
                     appendLog("Warning: ignoring invalid URL: \(p)")
                 }
@@ -508,6 +517,10 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
                 // BBC PIDs are alphanumeric.
                 if cleaned.range(of: #"^[A-Za-z0-9]+$"#, options: .regularExpression) != nil {
                     args.append("--pid=\(cleaned)")
+                    // --pid-recursive only applies with --pid (not --url).
+                    if pidRecursiveCheckbox.state == .on {
+                        args.append("--pid-recursive")
+                    }
                 } else {
                     appendLog("Warning: ignoring invalid PID: \(p)")
                 }
