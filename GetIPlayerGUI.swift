@@ -298,7 +298,6 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
 
         recordButton.title = "Download Selected"
         recordButton.bezelStyle = .rounded
-        recordButton.keyEquivalent = "\r"
         recordButton.target = self
         recordButton.action = #selector(recordTapped)
 
@@ -340,7 +339,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
 
         recordPidButton.title = "Download"
         recordPidButton.bezelStyle = .rounded
-        recordPidButton.bezelColor = .controlAccentColor
+        recordPidButton.keyEquivalent = "\r"
         recordPidButton.target = self
         recordPidButton.action = #selector(recordPidTapped)
 
