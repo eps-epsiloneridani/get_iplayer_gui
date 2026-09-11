@@ -52,6 +52,8 @@ Single file, three main types:
    - `run(arguments:onOutput:completion:)` — streams output chunks to a callback
      in real time (used for downloads, to drive the progress bar).
    - Uses `Process` with an **arguments array** (no shell) → no shell injection.
+   - Tracks the running `Process` and exposes `stop()` (sends SIGINT) for a
+     graceful Stop button.
 
 3. **`LineBuffer`** — splits a streamed chunk into complete lines.
 
@@ -71,7 +73,9 @@ Single file, three main types:
   series/brand PID downloads every episode (only applies to PIDs, not URLs).
 - **Progress row**: `Progress:` label + determinate progress bar + % label.
 - **Log console**: read-only `NSTextView` (all get_iplayer output streams here).
-- **Status label** at bottom.
+- **Status label** at bottom + a blue **Download** button on the PID bar and a
+  **Stop** button at the bottom right (enabled while busy, sends SIGINT via
+  `GetIPlayerRunner.stop()` to gracefully interrupt the running process).
 
 ### How commands are built
 

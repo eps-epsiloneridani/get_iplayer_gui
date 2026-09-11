@@ -37,9 +37,20 @@ struct Programme {
 /// Runs the get_iplayer binary and captures its output.
 final class GetIPlayerRunner {
     let binaryPath: String
+    private var runningProcess: Process?
+    private let lock = NSLock()
 
     init(binaryPath: String) {
         self.binaryPath = binaryPath
+    }
+
+    /// Sends SIGINT (ctrl-c) to the running process so get_iplayer can clean up
+    /// partial files gracefully. No-op when nothing is running.
+    func stop() {
+        lock.lock()
+        let process = runningProcess
+        lock.unlock()
+        process?.interrupt()
     }
 
     /// Runs get_iplayer on a background queue. `onOutput` is called on the main
@@ -50,6 +61,10 @@ final class GetIPlayerRunner {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: self.binaryPath)
             process.arguments = arguments
+
+            self.lock.lock()
+            self.runningProcess = process
+            self.lock.unlock()
 
             let pipe = Pipe()
             process.standardOutput = pipe
@@ -80,6 +95,9 @@ final class GetIPlayerRunner {
 
             process.waitUntilExit()
             handle.readabilityHandler = nil
+            self.lock.lock()
+            self.runningProcess = nil
+            self.lock.unlock()
             // Drain any remaining data
             let remaining = handle.readDataToEndOfFile()
             if remaining.count > 0, let s = String(data: remaining, encoding: .utf8) {
@@ -156,6 +174,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     private let logScroll = NSScrollView()
 
     private let statusLabel = NSTextField(labelWithString: "Ready")
+    private let stopButton = NSButton()
 
     // MARK: State
     private var programmes: [Programme] = []
@@ -321,6 +340,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
 
         recordPidButton.title = "Download"
         recordPidButton.bezelStyle = .rounded
+        recordPidButton.contentTintColor = .controlAccentColor
         recordPidButton.target = self
         recordPidButton.action = #selector(recordPidTapped)
 
@@ -369,6 +389,25 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         statusLabel.textColor = .secondaryLabelColor
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
+        // Bottom bar: status label on the left, Stop button on the right.
+        let footerBar = NSStackView()
+        footerBar.orientation = .horizontal
+        footerBar.spacing = 8
+        footerBar.translatesAutoresizingMaskIntoConstraints = false
+
+        stopButton.title = "Stop"
+        stopButton.bezelStyle = .rounded
+        stopButton.target = self
+        stopButton.action = #selector(stopTapped)
+        stopButton.isEnabled = false
+        stopButton.toolTip = "Gracefully stop the running get_iplayer process"
+
+        footerBar.addArrangedSubview(statusLabel)
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        footerBar.addArrangedSubview(spacer)
+        footerBar.addArrangedSubview(stopButton)
+
         // --- Layout ---
         root.addSubview(topBar)
         root.addSubview(scrollView)
@@ -377,7 +416,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         root.addSubview(pidBar)
         root.addSubview(progressBarRow)
         root.addSubview(logScroll)
-        root.addSubview(statusLabel)
+        root.addSubview(footerBar)
 
         NSLayoutConstraint.activate([
             topBar.topAnchor.constraint(equalTo: root.topAnchor, constant: 12),
@@ -408,11 +447,11 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
             logScroll.topAnchor.constraint(equalTo: progressBarRow.bottomAnchor, constant: 8),
             logScroll.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
             logScroll.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
-            logScroll.bottomAnchor.constraint(equalTo: statusLabel.topAnchor, constant: -6),
+            logScroll.bottomAnchor.constraint(equalTo: footerBar.topAnchor, constant: -6),
 
-            statusLabel.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
-            statusLabel.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
-            statusLabel.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -8),
+            footerBar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
+            footerBar.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
+            footerBar.bottomAnchor.constraint(equalTo: root.bottomAnchor, constant: -8),
         ])
     }
 
@@ -686,6 +725,13 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         refreshButton.isEnabled = !busy
         recordButton.isEnabled = !busy
         recordPidButton.isEnabled = !busy
+        stopButton.isEnabled = busy
+    }
+
+    /// Gracefully stops the currently running get_iplayer process (SIGINT).
+    @objc private func stopTapped() {
+        appendLog("Stop requested — interrupting get_iplayer…")
+        runner.stop()
     }
 
     // MARK: NSTableViewDataSource
