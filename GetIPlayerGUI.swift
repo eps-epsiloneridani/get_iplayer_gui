@@ -217,12 +217,12 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         let searchLabel = NSTextField(labelWithString: "Search:")
         searchField.placeholderString = "Programme name or regex (e.g. Doctor Who)"
         searchField.delegate = self
-        searchField.accessibilityLabel = "Search term"
+        searchField.setAccessibilityLabel("Search term")
         searchField.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         typePopup.addItems(withTitles: ["tv", "radio", "all"])
         typePopup.selectItem(withTitle: "tv")
-        typePopup.accessibilityLabel = "Programme type"
+        typePopup.setAccessibilityLabel("Programme type")
 
         searchButton.title = "Search"
         searchButton.bezelStyle = .rounded
@@ -273,7 +273,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         tableView.usesAlternatingRowBackgroundColors = true
         tableView.allowsMultipleSelection = true
         tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
-        tableView.accessibilityLabel = "Search results"
+        tableView.setAccessibilityLabel("Search results")
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
@@ -289,7 +289,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         let outLabel = NSTextField(labelWithString: "Output:")
         outputDirField.placeholderString = "Output directory"
         outputDirField.delegate = self
-        outputDirField.accessibilityLabel = "Output directory"
+        outputDirField.setAccessibilityLabel("Output directory")
         outputDirField.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         browseButton.title = "Browse…"
@@ -300,7 +300,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         let qualityLabel = NSTextField(labelWithString: "Quality:")
         qualityPopup.addItems(withTitles: ["default", "fhd", "hd", "sd", "web", "mobile", "high", "std", "med", "low"])
         qualityPopup.selectItem(withTitle: "default")
-        qualityPopup.accessibilityLabel = "Recording quality"
+        qualityPopup.setAccessibilityLabel("Recording quality")
 
         recordButton.title = "Download Selected"
         recordButton.bezelStyle = .rounded
@@ -330,7 +330,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         let customLabel = NSTextField(labelWithString: "Custom:")
         customFlagsField.placeholderString = "e.g. --force --audio-only"
         customFlagsField.delegate = self
-        customFlagsField.accessibilityLabel = "Custom flags"
+        customFlagsField.setAccessibilityLabel("Custom flags")
         customFlagsField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         flagsBar.addArrangedSubview(customLabel)
         flagsBar.addArrangedSubview(customFlagsField)
@@ -343,7 +343,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
 
         let pidLabel = NSTextField(labelWithString: "Record by PID/URL:")
         pidField.placeholderString = "e.g. b0abcdef or https://www.bbc.co.uk/iplayer/episode/..."
-        pidField.accessibilityLabel = "Record by PID or URL"
+        pidField.setAccessibilityLabel("Record by PID or URL")
         pidField.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         recordPidButton.title = "Download"
@@ -372,10 +372,10 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         progressBar.maxValue = 100
         progressBar.doubleValue = 0
         progressBar.controlSize = .regular
-        progressBar.accessibilityLabel = "Download progress"
+        progressBar.setAccessibilityLabel("Download progress")
         progressBar.setContentHuggingPriority(.defaultLow, for: .horizontal)
         progressLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
-        progressLabel.accessibilityLabel = "Progress percentage"
+        progressLabel.setAccessibilityLabel("Progress percentage")
         progressLabel.textColor = .secondaryLabelColor
         progressLabel.alignment = .right
         progressLabel.widthAnchor.constraint(equalToConstant: 50).isActive = true
@@ -397,7 +397,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
 
         statusLabel.font = NSFont.systemFont(ofSize: 12)
         statusLabel.textColor = .secondaryLabelColor
-        statusLabel.accessibilityLabel = "Status"
+        statusLabel.setAccessibilityLabel("Status")
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
         // Bottom bar: status label on the left, Stop button on the right.
@@ -820,9 +820,9 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
 
     /// Announces a message to assistive technologies (VoiceOver).
     private func announce(_ message: String) {
-        let userInfo = [
-            NSAccessibility.Notification.UserInfoKey.announcement: message,
-            NSAccessibility.Notification.UserInfoKey.priority: NSAccessibilityPriorityLevel.high.rawValue,
+        let userInfo: [NSAccessibility.NotificationUserInfoKey: Any] = [
+            NSAccessibility.NotificationUserInfoKey.announcement: message,
+            NSAccessibility.NotificationUserInfoKey.priority: NSAccessibilityPriorityLevel.high.rawValue,
         ]
         NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: userInfo)
     }
