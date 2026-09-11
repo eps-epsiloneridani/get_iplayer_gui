@@ -217,10 +217,12 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         let searchLabel = NSTextField(labelWithString: "Search:")
         searchField.placeholderString = "Programme name or regex (e.g. Doctor Who)"
         searchField.delegate = self
+        searchField.accessibilityLabel = "Search term"
         searchField.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         typePopup.addItems(withTitles: ["tv", "radio", "all"])
         typePopup.selectItem(withTitle: "tv")
+        typePopup.accessibilityLabel = "Programme type"
 
         searchButton.title = "Search"
         searchButton.bezelStyle = .rounded
@@ -271,6 +273,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         tableView.usesAlternatingRowBackgroundColors = true
         tableView.allowsMultipleSelection = true
         tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        tableView.accessibilityLabel = "Search results"
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
@@ -285,6 +288,8 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
 
         let outLabel = NSTextField(labelWithString: "Output:")
         outputDirField.placeholderString = "Output directory"
+        outputDirField.delegate = self
+        outputDirField.accessibilityLabel = "Output directory"
         outputDirField.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         browseButton.title = "Browse…"
@@ -295,6 +300,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         let qualityLabel = NSTextField(labelWithString: "Quality:")
         qualityPopup.addItems(withTitles: ["default", "fhd", "hd", "sd", "web", "mobile", "high", "std", "med", "low"])
         qualityPopup.selectItem(withTitle: "default")
+        qualityPopup.accessibilityLabel = "Recording quality"
 
         recordButton.title = "Download Selected"
         recordButton.bezelStyle = .rounded
@@ -323,6 +329,8 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         }
         let customLabel = NSTextField(labelWithString: "Custom:")
         customFlagsField.placeholderString = "e.g. --force --audio-only"
+        customFlagsField.delegate = self
+        customFlagsField.accessibilityLabel = "Custom flags"
         customFlagsField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         flagsBar.addArrangedSubview(customLabel)
         flagsBar.addArrangedSubview(customFlagsField)
@@ -335,6 +343,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
 
         let pidLabel = NSTextField(labelWithString: "Record by PID/URL:")
         pidField.placeholderString = "e.g. b0abcdef or https://www.bbc.co.uk/iplayer/episode/..."
+        pidField.accessibilityLabel = "Record by PID or URL"
         pidField.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
         recordPidButton.title = "Download"
@@ -363,8 +372,10 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         progressBar.maxValue = 100
         progressBar.doubleValue = 0
         progressBar.controlSize = .regular
+        progressBar.accessibilityLabel = "Download progress"
         progressBar.setContentHuggingPriority(.defaultLow, for: .horizontal)
         progressLabel.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        progressLabel.accessibilityLabel = "Progress percentage"
         progressLabel.textColor = .secondaryLabelColor
         progressLabel.alignment = .right
         progressLabel.widthAnchor.constraint(equalToConstant: 50).isActive = true
@@ -377,15 +388,16 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         // --- Log ---
         logView.isEditable = false
         logView.isRichText = false
-        logView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        logView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         logView.autoresizingMask = [.width]
         logScroll.documentView = logView
         logScroll.hasVerticalScroller = true
         logScroll.borderType = .bezelBorder
         logScroll.translatesAutoresizingMaskIntoConstraints = false
 
-        statusLabel.font = NSFont.systemFont(ofSize: 11)
+        statusLabel.font = NSFont.systemFont(ofSize: 12)
         statusLabel.textColor = .secondaryLabelColor
+        statusLabel.accessibilityLabel = "Status"
         statusLabel.translatesAutoresizingMaskIntoConstraints = false
 
         // Bottom bar: status label on the left, Stop button on the right.
@@ -460,6 +472,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         let term = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !term.isEmpty else {
             appendLog("Please enter a search term.")
+            announce("Please enter a search term.")
             return
         }
         let type = typePopup.titleOfSelectedItem ?? "tv"
@@ -475,6 +488,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
             self.appendLog(output)
             self.setBusy(false)
             self.statusLabel.stringValue = "Cache refreshed."
+            self.announce("Cache refreshed.")
         }
     }
 
@@ -485,6 +499,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
             guard let self = self else { return }
             self.appendLog(output)
             self.statusLabel.stringValue = "get_iplayer help loaded."
+            self.announce("get_iplayer help loaded.")
         }
     }
 
@@ -500,6 +515,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
             self.parseResults(output)
             self.setBusy(false)
             self.statusLabel.stringValue = "\(self.programmes.count) programme(s) found."
+            self.announce("\(self.programmes.count) programme(s) found.")
         }
     }
 
@@ -507,6 +523,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         let selectedRows = tableView.selectedRowIndexes
         guard !selectedRows.isEmpty else {
             appendLog("Select one or more programmes to record.")
+            announce("Select one or more programmes to record.")
             return
         }
         let indices = selectedRows.compactMap { row -> String? in
@@ -520,6 +537,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         let pid = pidField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !pid.isEmpty else {
             appendLog("Enter a PID or URL to record.")
+            announce("Enter a PID or URL to record.")
             return
         }
         record(pids: [pid])
@@ -630,6 +648,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
             self.progressBar.doubleValue = 100
             self.progressLabel.stringValue = "100%"
             self.statusLabel.stringValue = "Recording finished."
+            self.announce("Recording finished.")
         }
     }
 
@@ -778,10 +797,34 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         if commandSelector == #selector(NSResponder.insertNewline(_:)) {
-            searchTapped()
-            return true
+            if control === searchField {
+                searchTapped()
+                return true
+            }
+            // Consume Return in these fields so the default "Download" button
+            // doesn't fire unexpectedly while editing them. The PID field
+            // intentionally keeps the default (Download-on-Return) behavior.
+            if control === outputDirField || control === customFlagsField {
+                return true
+            }
         }
         return false
+    }
+
+    /// Gives keyboard focus to the search field (used as the initial first responder).
+    func focusSearch() {
+        if let w = view.window {
+            w.makeFirstResponder(searchField)
+        }
+    }
+
+    /// Announces a message to assistive technologies (VoiceOver).
+    private func announce(_ message: String) {
+        let userInfo = [
+            NSAccessibility.Notification.UserInfoKey.announcement: message,
+            NSAccessibility.Notification.UserInfoKey.priority: NSAccessibilityPriorityLevel.high.rawValue,
+        ]
+        NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: userInfo)
     }
 }
 
@@ -806,6 +849,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.center()
         window.setFrameAutosaveName("GetIPlayerMainWindow")
         window.makeKeyAndOrderFront(nil)
+        viewController.focusSearch()
 
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -826,6 +870,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenuItem.submenu = appMenu
         appMenu.addItem(withTitle: "About get_iplayer GUI", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "Hide get_iplayer GUI", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        let hideOthers = NSMenuItem(title: "Hide Others", action: #selector(NSApplication.hideOtherApplications(_:)), keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(hideOthers)
+        appMenu.addItem(withTitle: "Show All", action: #selector(NSApplication.unhideAllApplications(_:)), keyEquivalent: "")
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "Quit get_iplayer GUI", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
 
         // Edit menu (provides Cut/Copy/Paste/Select All)
@@ -841,6 +891,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: "")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        // Window menu (provides Cmd+M Minimize / Zoom)
+        let windowMenuItem = NSMenuItem()
+        mainMenu.addItem(windowMenuItem)
+        let windowMenu = NSMenu(title: "Window")
+        windowMenuItem.submenu = windowMenu
+        windowMenu.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windowMenu.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        NSApp.windowsMenu = windowMenu
 
         // Help menu
         let helpMenuItem = NSMenuItem()

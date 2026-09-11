@@ -139,6 +139,24 @@ binary is at `/usr/local/bin/get_iplayer`. If the path ever changes, edit the
 - Button labels: "Download Selected" (record selected), "Download" (record by PID).
 - **Help menu** item "Print Get_iPlayer Help" runs `get_iplayer --help` into the log.
 
+## Accessibility & keyboard
+
+- **Menus**: App menu now has Hide (Cmd+H), Hide Others (Cmd+Option+H), Show
+  All; a **Window** menu provides Minimize (Cmd+M) and Zoom.
+- **Return key**: the "Download" button is the default button. Return in the
+  Search field triggers Search; Return in Output/Custom-flags fields is consumed
+  (does nothing) so it doesn't fire Download; Return in the PID field fires
+  Download.
+- **VoiceOver labels**: search/output/custom-flags/PID fields, both popups, the
+  progress bar, progress label and status label all have explicit
+  `accessibilityLabel`s.
+- **Live announcements**: `announce(_:)` posts VoiceOver announcements on
+  search/refresh/help/record completion and on guard errors.
+- **Initial focus**: the search field becomes first responder at launch
+  (`ViewController.focusSearch()`).
+- **Table** has `accessibilityLabel = "Search results"; log/status fonts raised
+  to 12pt.
+
 ## Common tasks / where to edit
 
 - **Add a UI control**: declare a property near the other `private let` fields
