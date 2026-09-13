@@ -62,19 +62,28 @@ Also hardened in this pass: `stop()` now checks `isRunning` before
 `GetIPlayerRunner` also closes the parent's copy of the pipe write end after
 launch so EOF actually arrives when the child exits.
 
-## Section 3 — Layout & UX
+## Section 3 — Layout & UX ✅ DONE
 
-1. [ ] **Window resize breaks layout** — table height pinned to 300 with all
-   other rows fixed, so shrinking the window makes Auto Layout unsatisfiable.
-   Set `window.contentMinSize` and/or lower the height constraint's priority
-   so it can compress.
-2. [ ] **Dead code in `updateProgress`** — the "INFO: Downloading" reset
-   branch is unreachable (those lines fail `isProgressLine` and go to the
-   log). Move the per-programme bar reset into `onOutput`'s non-progress
-   branch so multi-programme downloads visibly restart at 0%.
-3. [ ] **Verify log text-view configuration** — standard
-   NSScrollView/NSTextView setup (`isVerticallyResizable`, container width
-   tracking) so long lines wrap and scroll rather than clip.
+1. [x] **Window resize breaks layout** — table height was pinned to 300 with
+   everything else fixed, so shrinking the window made Auto Layout
+   unsatisfiable. Now: `window.contentMinSize` = (720, 520) keeps the window
+   workable, and the table height constraint is priority 999 with a required
+   ≥150 floor so it compresses gracefully (defense in depth) instead of
+   breaking. Extra space when growing still goes to the log, as before.
+2. [x] **Dead code in `updateProgress`** — the unreachable "INFO:
+   Downloading" reset branch removed; the per-programme bar reset now lives
+   in `handleOutputLine`'s non-progress branch (where those lines actually
+   arrive), together with the VoiceOver announcement. Milestone tracking
+   (`lastProgressMilestone`) also resets per programme now, so multi-programme
+   downloads announce 25/50/75% for EACH programme (previously only the
+   first).
+3. [x] **Log text-view configuration** — canonical scroll-view sizing applied
+   explicitly: `isVerticallyResizable`, container width tracking (so long
+   lines wrap instead of clipping), unlimited container height. Third
+   AppKit annotation gotcha: `NSTextView.textContainer` is optional in this
+   SDK despite being effectively non-optional in practice.
+
+Launch check: app runs with zero Auto Layout warnings at startup.
 
 ## Section 4 — Performance
 

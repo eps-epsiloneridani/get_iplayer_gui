@@ -433,7 +433,18 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         logView.isEditable = false
         logView.isRichText = false
         logView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+        // Canonical scroll-view text sizing: the log grows vertically with
+        // its content, wraps at the view width (no horizontal scrolling), and
+        // the text container tracks the view width so long lines wrap instead
+        // of clipping.
+        logView.isVerticallyResizable = true
+        logView.isHorizontallyResizable = false
         logView.autoresizingMask = [.width]
+        if let container = logView.textContainer {
+            container.widthTracksTextView = true
+            container.heightTracksTextView = false
+            container.containerSize = NSSize(width: logScroll.contentSize.width, height: .greatestFiniteMagnitude)
+        }
         logView.setAccessibilityLabel("Log console")
         logScroll.documentView = logView
         logScroll.hasVerticalScroller = true
@@ -466,6 +477,14 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         footerBar.addArrangedSubview(stopButton)
 
         // --- Layout ---
+        // Table height: preferred 300pt but allowed to compress (priority 999)
+        // instead of producing unsatisfiable Auto Layout if the window is made
+        // very small; never below 150pt. The window's contentMinSize normally
+        // prevents this — the compression is defense in depth.
+        let tableHeight = scrollView.heightAnchor.constraint(equalToConstant: 300)
+        tableHeight.priority = NSLayoutConstraint.Priority(999)
+        let tableMinHeight = scrollView.heightAnchor.constraint(greaterThanOrEqualToConstant: 150)
+
         root.addSubview(topBar)
         root.addSubview(scrollView)
         root.addSubview(bottomBar)
@@ -483,7 +502,8 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
             scrollView.topAnchor.constraint(equalTo: topBar.bottomAnchor, constant: 10),
             scrollView.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
             scrollView.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -12),
-            scrollView.heightAnchor.constraint(equalToConstant: 300),
+            tableHeight,
+            tableMinHeight,
 
             bottomBar.topAnchor.constraint(equalTo: scrollView.bottomAnchor, constant: 10),
             bottomBar.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 12),
@@ -755,8 +775,14 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
             updateProgress(line)
             return
         }
-        // Announce the start of each programme download to VoiceOver.
+        // A new programme download is starting: reset the bar and the
+        // milestone tracker. This is the reachable reset path — the old reset
+        // branch in updateProgress was dead code, since "INFO: Downloading"
+        // lines never match the progress-line pattern.
         if let range = line.range(of: "INFO: Downloading") {
+            progressBar.doubleValue = 0
+            progressLabel.stringValue = "0%"
+            lastProgressMilestone = 0
             let name = line[range.upperBound...]
                 .trimmingCharacters(in: CharacterSet(charactersIn: ":").union(.whitespacesAndNewlines))
             announce(name.isEmpty ? "Downloading next programme" : "Downloading \(name)", priority: .medium)
@@ -769,11 +795,6 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     }
 
     private func updateProgress(_ line: String) {
-        // Reset the bar when a new programme download begins.
-        if line.contains("INFO: Downloading ") {
-            progressBar.doubleValue = 0
-            progressLabel.stringValue = "0%"
-        }
         let pattern = #"^\s*(\d+(?:\.\d+)?)% of ~"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
@@ -1008,6 +1029,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         window.title = "get_iplayer GUI"
         window.contentViewController = vc
+        // Keep the window from being resized below a workable size: the top
+        // bars, table (min 150pt), progress row, log and footer need this much
+        // vertical room, and the PID bar needs the width.
+        window.contentMinSize = NSSize(width: 720, height: 520)
         window.center()
         window.setFrameAutosaveName("GetIPlayerMainWindow")
         window.makeKeyAndOrderFront(nil)
