@@ -12,20 +12,34 @@ A native macOS GUI (AppKit / Swift) that provides a graphical interface for the
 - **Results table** — index, programme, channel, duration, PID, type
 - **Record selected** — download one or more selected programmes
 - **Record by PID/URL** — download a programme directly from a PID or iPlayer URL
+- **Record whole series** — with a series/brand PID, tick "Record whole series" to fetch every related episode (`--pid-recursive`; applies to PIDs, not URLs)
 - **Recording flags** — tick boxes for common flags (`--force`, `--audio-only`, `--raw`, `--no-resume`, `--verbose`, `--subtitles`) plus a free-text field for any custom flags
-- **Download progress bar** — live percentage bar while recording
+- **Download progress bar** — live percentage bar while recording; resets between programmes in a multi-download, with honest statuses (exit codes, "stopped by user")
+- **Graceful Stop** — the Stop button or ⌘. (Controls menu) interrupts the running get_iplayer cleanly
 - **Refresh cache** — update the get_iplayer programme cache
 - **Output directory** — choose where recordings are saved
 - **Quality** — pick TV/radio quality (fhd, hd, sd, web, mobile, high, std, med, low)
 - **Subtitles** — optionally download subtitles
-- **Live log console** — shows all get_iplayer output
+- **Live log console** — shows all get_iplayer output (wraps long lines, keeps roughly the last 200k characters)
+- **Accessible** — VoiceOver labels, help text and spoken announcements for search, recording, progress and selection, plus full keyboard operation
 
 ## Requirements
 
 - macOS 13 or later (Apple Silicon)
 - The Swift toolchain (`swiftc`)
-- [get_iplayer](https://github.com/get-iplayer/get_iplayer) installed at
-  `/usr/local/bin/get_iplayer`
+- [get_iplayer](https://github.com/get-iplayer/get_iplayer) — the app runs the
+  binary at `/usr/local/bin/get_iplayer` specifically (the official
+  installer's location; the `/Applications/get_iplayer/` folder only contains
+  wrapper scripts). If your copy is elsewhere — e.g. Homebrew on Apple Silicon
+  installs to `/opt/homebrew/bin/get_iplayer` — either symlink it into place:
+
+  ```sh
+  sudo ln -s /opt/homebrew/bin/get_iplayer /usr/local/bin/get_iplayer
+  ```
+
+  or edit the single `binaryPath` line in `viewDidLoad`
+  (`GetIPlayerGUI.swift`). If the binary isn't found at launch, the app says so
+  in its log console.
 
 ## Build
 
@@ -35,9 +49,9 @@ From this directory:
 ./build.sh
 ```
 
-This produces `build/get_iplayer_gui.app`. The app references the installed
-`get_iplayer` binary at `/usr/local/bin/get_iplayer` (the `/Applications/get_iplayer/`
-folder only contains wrapper scripts).
+This produces `build/get_iplayer_gui.app`. The app runs the installed
+`get_iplayer` binary — see Requirements for the expected path and what to do
+if yours is installed elsewhere.
 
 ## Run
 
@@ -87,8 +101,10 @@ It checks the source, build script, and workflow for backdoor indicators
 (network exfiltration, shell execution, obfuscation, unexpected file writes,
 hardcoded endpoints, external downloads). Defense-in-depth input validation is
 also applied at runtime: the custom-flags field only accepts `-`-prefixed tokens
-of safe characters, and the PID/URL field only accepts alphanumeric PIDs or
-well-formed http(s) URLs.
+of safe characters, the PID/URL field only accepts alphanumeric PIDs or
+well-formed http(s) URLs (and a recording with nothing valid never starts),
+and search terms beginning with `--` are rejected so get_iplayer can't read
+them as options.
 
 ## License
 
