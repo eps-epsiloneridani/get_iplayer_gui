@@ -180,6 +180,10 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     private var programmes: [Programme] = []
     private var runner: GetIPlayerRunner!
     private var isBusy = false
+    /// True from the moment the user presses Stop until the next operation
+    /// starts. Completion handlers use it to distinguish "stopped by user"
+    /// from a genuine failure or success.
+    private var stopRequested = false
 
     // MARK: Lifecycle
 
@@ -483,23 +487,44 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         let type = typePopup.titleOfSelectedItem ?? "tv"
         setBusy(true)
         appendLog("Refreshing \(type) cache…")
-        runner.run(arguments: ["--refresh", "--type=\(type)"]) { [weak self] output, _ in
+        runner.run(arguments: ["--refresh", "--type=\(type)"]) { [weak self] output, status in
             guard let self = self else { return }
             self.appendLog(output)
             self.setBusy(false)
-            self.statusLabel.stringValue = "Cache refreshed."
-            self.announce("Cache refreshed.")
+            if self.stopRequested {
+                self.statusLabel.stringValue = "Cache refresh stopped by user."
+            } else if status != 0 {
+                self.statusLabel.stringValue = "Cache refresh failed (get_iplayer exited with status \(status))."
+            } else {
+                self.statusLabel.stringValue = "Cache refreshed."
+            }
+            self.announce(self.statusLabel.stringValue)
         }
     }
 
     /// Runs `get_iplayer --help` and shows the output in the log console.
+    /// Guarded: never runs while another get_iplayer process is active, so it
+    /// can't clobber the runner's single-process tracking (which would break Stop).
     @objc func showHelp() {
+        guard !isBusy else {
+            appendLog("Busy — help is unavailable while get_iplayer is running.")
+            announce("Busy. Help is unavailable while get_iplayer is running.")
+            return
+        }
+        setBusy(true)
         appendLog("Fetching get_iplayer help…")
-        runner.run(arguments: ["--help"]) { [weak self] output, _ in
+        runner.run(arguments: ["--help"]) { [weak self] output, status in
             guard let self = self else { return }
             self.appendLog(output)
-            self.statusLabel.stringValue = "get_iplayer help loaded."
-            self.announce("get_iplayer help loaded.")
+            self.setBusy(false)
+            if self.stopRequested {
+                self.statusLabel.stringValue = "Help stopped by user."
+            } else if status != 0 {
+                self.statusLabel.stringValue = "Failed to load get_iplayer help (get_iplayer exited with status \(status))."
+            } else {
+                self.statusLabel.stringValue = "get_iplayer help loaded."
+            }
+            self.announce(self.statusLabel.stringValue)
         }
     }
 
@@ -509,13 +534,19 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         let listFormat = "<index>|<pid>|<name>|<episode>|<channel>|<duration>|<desc>|<type>|<available>|<expires>|<categories>|<versions>|<mode>|<web>|<filename>|<thumbnail>|<timeadded>|<guidance>"
         let args = ["--type=\(type)", "--listformat=\(listFormat)", term]
         appendLog("Searching for '\(term)' (type: \(type))…")
-        runner.run(arguments: args) { [weak self] output, _ in
+        runner.run(arguments: args) { [weak self] output, status in
             guard let self = self else { return }
             self.appendLog(output)
             self.parseResults(output)
             self.setBusy(false)
-            self.statusLabel.stringValue = "\(self.programmes.count) programme(s) found."
-            self.announce("\(self.programmes.count) programme(s) found.")
+            if self.stopRequested {
+                self.statusLabel.stringValue = "Search stopped by user."
+            } else if status != 0 {
+                self.statusLabel.stringValue = "Search failed (get_iplayer exited with status \(status))."
+            } else {
+                self.statusLabel.stringValue = "\(self.programmes.count) programme(s) found."
+            }
+            self.announce(self.statusLabel.stringValue)
         }
     }
 
@@ -582,6 +613,13 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
                 }
             }
         }
+        // Abort if nothing valid was collected: `--get` with no --pid/--url
+        // selection would make get_iplayer download the ENTIRE cache.
+        guard !args.isEmpty else {
+            appendLog("No valid PID or URL to record — nothing was started.")
+            announce("Invalid PID or URL. Nothing recorded.")
+            return
+        }
         args.append("--get")
         appendCommonRecordArgs(&args)
         appendLog("Recording: \(pids.joined(separator: ", "))")
@@ -642,13 +680,21 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
                     self.appendLog(line)
                 }
             }
-        }) { [weak self] _, _ in
+        }) { [weak self] _, status in
             guard let self = self else { return }
             self.setBusy(false)
-            self.progressBar.doubleValue = 100
-            self.progressLabel.stringValue = "100%"
-            self.statusLabel.stringValue = "Recording finished."
-            self.announce("Recording finished.")
+            if self.stopRequested {
+                self.statusLabel.stringValue = "Recording stopped by user."
+                self.appendLog("Recording stopped by user.")
+            } else if status != 0 {
+                self.statusLabel.stringValue = "Recording failed (get_iplayer exited with status \(status))."
+                self.appendLog(self.statusLabel.stringValue)
+            } else {
+                self.statusLabel.stringValue = "Recording finished."
+                self.progressBar.doubleValue = 100
+                self.progressLabel.stringValue = "100%"
+            }
+            self.announce(self.statusLabel.stringValue)
         }
     }
 
@@ -735,6 +781,8 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     private func setBusy(_ busy: Bool) {
         isBusy = busy
         if busy {
+            // A new operation is starting: a previous Stop request no longer applies.
+            stopRequested = false
             spinner.startAnimation(nil)
         } else {
             spinner.stopAnimation(nil)
@@ -748,6 +796,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
 
     /// Gracefully stops the currently running get_iplayer process (SIGINT).
     @objc private func stopTapped() {
+        stopRequested = true
         appendLog("Stop requested — interrupting get_iplayer…")
         runner.stop()
     }
@@ -818,6 +867,18 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         }
     }
 
+    // MARK: Menu item validation
+
+    /// Disables the Help menu item while a get_iplayer process is running so it
+    /// can't run concurrently and clobber the runner's process tracking.
+    /// All other items keep their default enabled state.
+    func validate(_ item: NSValidatedUserInterfaceItem) -> Bool {
+        if item.action == #selector(showHelp) {
+            return !isBusy
+        }
+        return true
+    }
+
     /// Announces a message to assistive technologies (VoiceOver).
     private func announce(_ message: String) {
         let userInfo: [NSAccessibility.NotificationUserInfoKey: Any] = [
@@ -835,9 +896,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var viewController: ViewController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        setupMainMenu()
         let vc = ViewController()
         viewController = vc
+        // Set up menus after the view controller exists so the Help item can
+        // target it explicitly (previously a nil target that only worked via
+        // responder-chain luck).
+        setupMainMenu()
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 960, height: 680),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
