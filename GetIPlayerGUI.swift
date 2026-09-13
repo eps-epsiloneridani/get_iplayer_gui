@@ -151,6 +151,16 @@ final class LineBuffer {
     }
 }
 
+/// A stack view that acts as a VoiceOver group for its contents.
+///
+/// AppKit provides runtime setters for label/role/help/children
+/// (setAccessibilityLabel etc.), but — unlike UIKit — no way to switch a
+/// stock view's element-ness at runtime (`isAccessibilityElement` is a
+/// read-only method), so element-ness must come from a subclass override.
+final class GroupedStackView: NSStackView {
+    override func isAccessibilityElement() -> Bool { true }
+}
+
 // MARK: - Main view controller
 
 final class ViewController: NSViewController, NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate, NSSearchFieldDelegate {
@@ -200,6 +210,9 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     /// starts. Completion handlers use it to distinguish "stopped by user"
     /// from a genuine failure or success.
     private var stopRequested = false
+    /// Last progress milestone announced for the current download
+    /// (0-4 → 0/25/50/75/100%), so each milestone is announced at most once.
+    private var lastProgressMilestone = 0
 
     // MARK: Lifecycle
 
@@ -243,6 +256,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         typePopup.addItems(withTitles: ["tv", "radio", "all"])
         typePopup.selectItem(withTitle: "tv")
         typePopup.setAccessibilityLabel("Programme type")
+        typePopup.setAccessibilityHelp("Whether to search TV or radio programmes, or both.")
 
         searchButton.title = "Search"
         searchButton.bezelStyle = .rounded
@@ -257,6 +271,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         spinner.style = .spinning
         spinner.controlSize = .small
         spinner.isDisplayedWhenStopped = false
+        spinner.setAccessibilityLabel("Working")
 
         topBar.addArrangedSubview(searchLabel)
         topBar.addArrangedSubview(searchField)
@@ -294,6 +309,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         tableView.allowsMultipleSelection = true
         tableView.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         tableView.setAccessibilityLabel("Search results")
+        tableView.setAccessibilityValue("No results")
 
         scrollView.documentView = tableView
         scrollView.hasVerticalScroller = true
@@ -321,6 +337,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         qualityPopup.addItems(withTitles: ["default", "fhd", "hd", "sd", "web", "mobile", "high", "std", "med", "low"])
         qualityPopup.selectItem(withTitle: "default")
         qualityPopup.setAccessibilityLabel("Recording quality")
+        qualityPopup.setAccessibilityHelp("fhd, hd, sd, web and mobile are TV qualities; high, std, med and low are audio qualities.")
 
         recordButton.title = "Download Selected"
         recordButton.bezelStyle = .rounded
@@ -335,7 +352,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         bottomBar.addArrangedSubview(recordButton)
 
         // --- Recording flags bar ---
-        let flagsBar = NSStackView()
+        let flagsBar = GroupedStackView()
         flagsBar.orientation = .horizontal
         flagsBar.spacing = 10
         flagsBar.translatesAutoresizingMaskIntoConstraints = false
@@ -354,6 +371,12 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         customFlagsField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         flagsBar.addArrangedSubview(customLabel)
         flagsBar.addArrangedSubview(customFlagsField)
+        // Expose the flags bar as one VoiceOver group so the checkboxes aren't
+        // read as an unanchored stream: the group carries the name, and the
+        // checkboxes remain navigable as its accessibility children.
+        flagsBar.setAccessibilityRole(.group)
+        flagsBar.setAccessibilityLabel("Recording flags")
+        flagsBar.setAccessibilityChildren(flagsBar.arrangedSubviews)
 
         // --- PID bar ---
         let pidBar = NSStackView()
@@ -379,6 +402,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         pidRecursiveCheckbox.setButtonType(.switch)
         pidRecursiveCheckbox.font = NSFont.systemFont(ofSize: 12)
         pidRecursiveCheckbox.toolTip = "If the PID is a series or brand PID, download every related episode. Requires a PID (not a URL)."
+        pidRecursiveCheckbox.setAccessibilityHelp("If the PID is a series or brand PID, download every related episode. Requires a PID, not a URL.")
         pidBar.addArrangedSubview(pidRecursiveCheckbox)
 
         // --- Progress bar ---
@@ -410,6 +434,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         logView.isRichText = false
         logView.font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
         logView.autoresizingMask = [.width]
+        logView.setAccessibilityLabel("Log console")
         logScroll.documentView = logView
         logScroll.hasVerticalScroller = true
         logScroll.borderType = .bezelBorder
@@ -432,6 +457,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         stopButton.action = #selector(stopTapped)
         stopButton.isEnabled = false
         stopButton.toolTip = "Gracefully stop the running get_iplayer process"
+        stopButton.setAccessibilityHelp("Gracefully stops the running get_iplayer process with an interrupt signal.")
 
         footerBar.addArrangedSubview(statusLabel)
         let spacer = NSView()
@@ -503,6 +529,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         let type = typePopup.titleOfSelectedItem ?? "tv"
         setBusy(true)
         appendLog("Refreshing \(type) cache…")
+        announce("Refreshing \(type) cache", priority: .medium)
         runner.run(arguments: ["--refresh", "--type=\(type)"]) { [weak self] output, status in
             guard let self = self else { return }
             self.appendLog(output)
@@ -529,6 +556,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         }
         setBusy(true)
         appendLog("Fetching get_iplayer help…")
+        announce("Fetching get_iplayer help", priority: .medium)
         runner.run(arguments: ["--help"]) { [weak self] output, status in
             guard let self = self else { return }
             self.appendLog(output)
@@ -547,6 +575,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     private func runSearch(term: String, type: String) {
         setBusy(true)
         statusLabel.stringValue = "Searching…"
+        announce("Searching", priority: .medium)
         let listFormat = "<index>|<pid>|<name>|<episode>|<channel>|<duration>|<desc>|<type>|<available>|<expires>|<categories>|<versions>|<mode>|<web>|<filename>|<thumbnail>|<timeadded>|<guidance>"
         let args = ["--type=\(type)", "--listformat=\(listFormat)", term]
         appendLog("Searching for '\(term)' (type: \(type))…")
@@ -685,6 +714,8 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         statusLabel.stringValue = "Recording…"
         progressBar.doubleValue = 0
         progressLabel.stringValue = "0%"
+        lastProgressMilestone = 0
+        announce("Recording started", priority: .medium)
 
         let lineBuffer = LineBuffer()
         runner.run(arguments: args, onOutput: { [weak self] chunk in
@@ -722,9 +753,15 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     private func handleOutputLine(_ line: String) {
         if isProgressLine(line) {
             updateProgress(line)
-        } else {
-            appendLog(line)
+            return
         }
+        // Announce the start of each programme download to VoiceOver.
+        if let range = line.range(of: "INFO: Downloading") {
+            let name = line[range.upperBound...]
+                .trimmingCharacters(in: CharacterSet(charactersIn: ":").union(.whitespacesAndNewlines))
+            announce(name.isEmpty ? "Downloading next programme" : "Downloading \(name)", priority: .medium)
+        }
+        appendLog(line)
     }
 
     private func isProgressLine(_ line: String) -> Bool {
@@ -744,6 +781,14 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
               let pct = Double(line[range]) else { return }
         progressBar.doubleValue = pct
         progressLabel.stringValue = String(format: "%.1f%%", pct)
+        // Announce each 25% milestone once (completion is announced separately).
+        let milestone = Int(pct / 25)
+        if milestone > lastProgressMilestone {
+            lastProgressMilestone = milestone
+            if milestone < 4 {
+                announce("\(milestone * 25) percent", priority: .medium)
+            }
+        }
     }
 
     @objc private func browseTapped() {
@@ -790,6 +835,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         }
         programmes = results
         tableView.reloadData()
+        tableView.setAccessibilityValue(programmes.isEmpty ? "No results" : "\(programmes.count) results")
     }
 
     // MARK: Logging
@@ -822,9 +868,11 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     }
 
     /// Gracefully stops the currently running get_iplayer process (SIGINT).
-    @objc private func stopTapped() {
+    /// Internal (not private) so the Controls menu can target it.
+    @objc func stopTapped() {
         stopRequested = true
         appendLog("Stop requested — interrupting get_iplayer…")
+        announce("Stop requested", priority: .medium)
         runner.stop()
     }
 
@@ -869,6 +917,18 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         return cell
     }
 
+    /// Announces selection changes so VoiceOver users hear which programme(s)
+    /// they selected (mouse clicks and multi-select are otherwise silent).
+    func tableViewSelectionDidChange(_ notification: Notification) {
+        let rows = tableView.selectedRowIndexes
+        guard rows.count > 0 else { return }
+        if rows.count == 1, let row = rows.first, row < programmes.count {
+            announce("Selected \(programmes[row].displayTitle)", priority: .medium)
+        } else {
+            announce("\(rows.count) programmes selected", priority: .medium)
+        }
+    }
+
     // MARK: NSTextFieldDelegate
 
     func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
@@ -909,14 +969,19 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         if menuItem.action == #selector(showHelp) {
             return !isBusy
         }
+        if menuItem.action == #selector(stopTapped) {
+            // Mirrors the Stop button: only meaningful while a process runs.
+            return isBusy
+        }
         return true
     }
 
-    /// Announces a message to assistive technologies (VoiceOver).
-    private func announce(_ message: String) {
+    /// Announces a message to assistive technologies (VoiceOver). High-priority
+    /// announcements interrupt current speech; medium ones queue behind it.
+    private func announce(_ message: String, priority: NSAccessibilityPriorityLevel = .high) {
         let userInfo: [NSAccessibility.NotificationUserInfoKey: Any] = [
             NSAccessibility.NotificationUserInfoKey.announcement: message,
-            NSAccessibility.NotificationUserInfoKey.priority: NSAccessibilityPriorityLevel.high.rawValue,
+            NSAccessibility.NotificationUserInfoKey.priority: priority.rawValue,
         ]
         NSAccessibility.post(element: view, notification: .announcementRequested, userInfo: userInfo)
     }
@@ -988,6 +1053,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Delete", action: #selector(NSText.delete(_:)), keyEquivalent: "")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+
+        // Controls menu: keyboard access to Stop. ⌘. matches the system
+        // interrupt convention (e.g. Terminal). Enabled only while a
+        // get_iplayer process is running, via validateMenuItem(_:) in the
+        // view controller (same rule as the Stop button).
+        let controlsMenuItem = NSMenuItem()
+        mainMenu.addItem(controlsMenuItem)
+        let controlsMenu = NSMenu(title: "Controls")
+        controlsMenuItem.submenu = controlsMenu
+        let stopItem = NSMenuItem(title: "Stop", action: #selector(ViewController.stopTapped), keyEquivalent: ".")
+        stopItem.target = viewController
+        controlsMenu.addItem(stopItem)
 
         // Window menu (provides Cmd+M Minimize / Zoom)
         let windowMenuItem = NSMenuItem()

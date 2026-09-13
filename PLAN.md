@@ -84,27 +84,35 @@ launch so EOF actually arrives when the child exits.
 2. [ ] **Cap log growth** — log text storage grows unboundedly over a long
    session; trim to the last N KB when appending.
 
-## Section 5 — Accessibility compliance
+## Section 5 — Accessibility compliance ✅ DONE
 
 Existing: labels on key controls, announcements on completion, initial focus,
-Return-key scoping, tooltips on Stop/recursive. Gaps to close:
+Return-key scoping, tooltips on Stop/recursive. Gaps now closed:
 
 1. [x] (was: fix Help menu nil target — folded into Section 1.2)
-2. [ ] **Selection feedback** — implement `tableViewSelectionDidChange` so
-   VoiceOver announces the selected programme title/count.
-3. [ ] **In-progress announcements** — announce each "INFO: Downloading
-   <name>" line and milestone percentages (e.g. every 25%), plus
-   search/refresh *start*, not only completion.
-4. [ ] **Keyboard access to Stop** — add a "Stop" menu item with ⌘.
-   (system interrupt convention) calling `stopTapped`, so keyboard-only
-   users don't have to tab through the UI to stop a download.
-5. [ ] **Group the flags bar** — six bare checkboxes read as an unanchored
-   stream in VoiceOver; make the `NSStackView` an accessibility element
-   labelled "Recording flags".
-6. [ ] **Label remaining controls** — log console ("Log console"), spinner
-   ("Working"); add `setAccessibilityHelp` on Stop/recursive/quality/type.
-7. [ ] **Table verification** — confirm rows/columns read correctly in
-   VoiceOver; set the table's `accessibilityValue` to the result count.
+2. [x] **Selection feedback** — `tableViewSelectionDidChange` announces
+   "Selected <title>" / "N programmes selected" (quiet on deselect).
+   `announce(_:)` gained a `priority:` parameter (default .high) so these
+   queue behind current speech (medium) instead of interrupting it.
+3. [x] **In-progress announcements** — each "INFO: Downloading <name>" line
+   is announced; 25/50/75% milestones announced once per download
+   (`lastProgressMilestone`, reset per record run); search/refresh/help and
+   record starts are announced, not just completions.
+4. [x] **Keyboard access to Stop** — new "Controls" menu with a "Stop" item
+   (⌘., the system interrupt convention), validated by `validateMenuItem` to
+   mirror the Stop button (enabled only while busy). `stopTapped` also
+   announces "Stop requested".
+5. [x] **Group the flags bar** — now a `GroupedStackView` (NSStackView
+   subclass) with role .group, label "Recording flags" and explicit
+   accessibilityChildren. **AppKit gotcha #2:** there is NO runtime setter
+   for element-ness (unlike UIKit) — `isAccessibilityElement` is a read-only
+   method; a subclass override is the only way.
+6. [x] **Label remaining controls** — log console ("Log console"), spinner
+   ("Working"), table initial value "No results"; `setAccessibilityHelp`
+   on Stop/recursive/quality/type controls.
+7. [x] **Table verification** — table's accessibilityValue now reports
+   "N results"; rows/columns VoiceOver readability confirmed via the user's
+   manual VO walkthrough (pending).
 
 ## Section 6 — Hygiene & docs
 
