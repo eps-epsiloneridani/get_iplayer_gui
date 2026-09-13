@@ -85,13 +85,16 @@ launch so EOF actually arrives when the child exits.
 
 Launch check: app runs with zero Auto Layout warnings at startup.
 
-## Section 4 — Performance
+## Section 4 — Performance ✅ DONE
 
-1. [ ] **Precompile the progress regex** — `updateProgress` builds an
-   `NSRegularExpression` per line and `isProgressLine` re-parses per line;
-   parse each line once with one cached regex.
-2. [ ] **Cap log growth** — log text storage grows unboundedly over a long
-   session; trim to the last N KB when appending.
+1. [x] **Precompile the progress regex** — one cached `progressRegex` now
+   backs a single `parseProgressLine(_:)` (replacing the two-function
+   `isProgressLine`/`updateProgress` pair); one regex evaluation per line
+   instead of a per-line NSRegularExpression build plus a second parse.
+2. [x] **Cap log growth** — `appendLog` trims the log to ~200k characters
+   (cut extended to the next newline so it always starts on a whole entry).
+   Bonus in this pass: the per-line `DateFormatter.localizedString` call was
+   replaced with one shared cached formatter.
 
 ## Section 5 — Accessibility compliance ✅ DONE
 

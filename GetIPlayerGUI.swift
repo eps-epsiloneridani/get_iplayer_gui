@@ -213,6 +213,20 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     /// Last progress milestone announced for the current download
     /// (0-4 → 0/25/50/75/100%), so each milestone is announced at most once.
     private var lastProgressMilestone = 0
+    /// Progress-line regex, compiled once. Each output line used to cost a
+    /// fresh NSRegularExpression build plus a second String.range regex parse.
+    private static let progressRegex = try! NSRegularExpression(pattern: #"^\s*(\d+(?:\.\d+)?)% of ~"#)
+    /// Shared timestamp formatter for the log (creating a DateFormatter per
+    /// log line is needlessly expensive).
+    private static let logTimestampFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .medium
+        return formatter
+    }()
+    /// Log cap: the log keeps roughly the last 200k characters; older entries
+    /// are trimmed so long sessions can't grow the text storage without bound.
+    private static let logCharacterLimit = 200_000
 
     // MARK: Lifecycle
 
@@ -771,8 +785,8 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     /// Routes one complete line of get_iplayer output: progress lines drive
     /// the progress bar, everything else goes to the log.
     private func handleOutputLine(_ line: String) {
-        if isProgressLine(line) {
-            updateProgress(line)
+        if let pct = Self.parseProgressLine(line) {
+            updateProgress(pct)
             return
         }
         // A new programme download is starting: reset the bar and the
@@ -790,16 +804,16 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         appendLog(line)
     }
 
-    private func isProgressLine(_ line: String) -> Bool {
-        return line.range(of: #"^\s*\d+(?:\.\d+)?% of ~"#, options: .regularExpression) != nil
+    /// Extracts the percentage from a get_iplayer progress line, or nil when
+    /// the line isn't one. Uses the precompiled `progressRegex` — one regex
+    /// evaluation per line instead of the two this used to cost.
+    private static func parseProgressLine(_ line: String) -> Double? {
+        guard let match = progressRegex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+              let range = Range(match.range(at: 1), in: line) else { return nil }
+        return Double(line[range])
     }
 
-    private func updateProgress(_ line: String) {
-        let pattern = #"^\s*(\d+(?:\.\d+)?)% of ~"#
-        guard let regex = try? NSRegularExpression(pattern: pattern),
-              let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
-              let range = Range(match.range(at: 1), in: line),
-              let pct = Double(line[range]) else { return }
+    private func updateProgress(_ pct: Double) {
         progressBar.doubleValue = pct
         progressLabel.stringValue = String(format: "%.1f%%", pct)
         // Announce each 25% milestone once (completion is announced separately).
@@ -863,12 +877,27 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
 
     private func appendLog(_ text: String) {
         guard !text.isEmpty else { return }
-        let timestamp = DateFormatter.localizedString(from: Date(), dateStyle: .none, timeStyle: .medium)
+        let timestamp = Self.logTimestampFormatter.string(from: Date())
         let attributed = NSAttributedString(string: "[\(timestamp)] \(text)\n", attributes: [
             .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .regular),
             .foregroundColor: NSColor.textColor
         ])
-        logView.textStorage?.append(attributed)
+        guard let storage = logView.textStorage else { return }
+        storage.append(attributed)
+        // Cap the log so long sessions can't grow the text storage (and the
+        // layout work it implies) without bound. Trim the oldest entries,
+        // extending the cut to the next newline so the log always starts on
+        // a whole entry.
+        if storage.length > Self.logCharacterLimit {
+            let excess = storage.length - Self.logCharacterLimit
+            var cutLength = excess
+            let contents = storage.string as NSString
+            let newline = contents.range(of: "\n", range: NSRange(location: 0, length: min(contents.length, excess + 1)))
+            if newline.location != NSNotFound {
+                cutLength = newline.location + 1
+            }
+            storage.deleteCharacters(in: NSRange(location: 0, length: cutLength))
+        }
         logView.scrollToEndOfDocument(nil)
     }
 
