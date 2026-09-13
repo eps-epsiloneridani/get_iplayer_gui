@@ -1,7 +1,7 @@
 # HANDOFF — get_iplayer GUI
 
 Purpose: bring a fresh pi session up to speed fast. Read this first, then
-`README.md` and `GetIPlayerGUI.swift` as needed.
+`README.md`, `PLAN.md`, and `GetIPlayerGUI.swift` as needed.
 
 ## What this is
 
@@ -29,7 +29,9 @@ Requires: Swift toolchain (`swiftc`), macOS 13+, and `get_iplayer` installed at
 
 ```
 gui/
-├── GetIPlayerGUI.swift        # the entire app (single file, ~920 lines)
+├── GetIPlayerGUI.swift        # the entire app (single file, ~1130 lines)
+├── PLAN.md                    # optimisation plan: review findings, per-section
+│                              # fixes + status (all six sections DONE)
 ├── build.sh                   # builds the .app bundle (swiftc + Info.plist + codesign)
 ├── scripts/security_scan.py   # static security scan (backdoor indicators)
 ├── .github/workflows/build.yml    # CI: build + upload artifact
@@ -41,7 +43,7 @@ gui/
 
 ## Architecture (GetIPlayerGUI.swift)
 
-Single file, three main types:
+Single file, six main types:
 
 1. **`Programme`** (struct) — one search result; fields parsed from
    get_iplayer's `--listformat` pipe-delimited output.
@@ -52,48 +54,77 @@ Single file, three main types:
    - `run(arguments:onOutput:completion:)` — streams output chunks to a callback
      in real time (used for downloads, to drive the progress bar).
    - Uses `Process` with an **arguments array** (no shell) → no shell injection.
-   - Tracks the running `Process` and exposes `stop()` (sends SIGINT) for a
-     graceful Stop button.
+   - Tracks the running `Process` and exposes `stop()` (SIGINT; guarded by
+     `isRunning`) for a graceful Stop button.
+   - Runner robustness (PLAN.md S2 — do not regress):
+     - **No `readDataToEndOfFile()` after `waitUntilExit`** — a lingering child
+       of get_iplayer (ffmpeg etc.) inheriting the pipe would block that
+       call forever and leave the UI stuck "busy". Output is delivered by the
+       `readabilityHandler`; completion fires from the exit path.
+     - The parent closes its own copy of the pipe's write end after launch.
+     - Launch failure clears `runningProcess` (identity-checked, under lock)
+       so `stop()` can never hit a dead process.
 
-3. **`LineBuffer`** — splits a streamed chunk into complete lines.
+3. **`LineBuffer`** — splits a streamed chunk into complete lines; `flush(_:)`
+   is called in the record completion so the final partial line isn't lost.
 
-4. **`ViewController`** — builds the UI and handles all actions.
+4. **`GroupedStackView`** — NSStackView subclass whose `isAccessibilityElement()`
+   returns true (AppKit has no runtime setter for element-ness — see AppKit
+   gotchas). Used to expose the flags bar as a VoiceOver group.
 
-5. **`AppDelegate`** — window + main menu (App / Edit / Help).
+5. **`ViewController`** — builds the UI and handles all actions.
+
+6. **`AppDelegate`** — window + main menu (App / Edit / Controls / Window / Help).
 
 ### UI layout (top → bottom)
 
-- **Top bar**: Search field, type popup (`tv`/`radio`/`all`), Search, Refresh Cache, spinner.
+- **Top bar**: Search field, type popup (`tv`/`radio`/`all`), Search,
+  Refresh Cache, spinner.
 - **Results table**: columns Idx / Programme / Channel / Duration / PID / Type.
-- **Bottom bar**: Output dir field + Browse, Quality popup, "Download Selected" button.
-- **Flags bar**: `Flags:` label, then checkboxes Force / Audio-only / Raw /
-  No-resume / Verbose / Subtitles, then `Custom:` free-text field.
+- **Bottom bar**: Output dir field + Browse, Quality popup,
+  "Download Selected" button.
+- **Flags bar**: a `GroupedStackView` (VoiceOver group "Recording flags"):
+  `Flags:` label, checkboxes Force / Audio-only / Raw / No-resume / Verbose /
+  Subtitles, then `Custom:` free-text field.
 - **PID bar**: "Record by PID/URL:" field + "Download" button + "Record whole
-  series (PID recursive)" checkbox. When ticked, `--pid-recursive` is added so a
-  series/brand PID downloads every episode (only applies to PIDs, not URLs).
+  series (PID recursive)" checkbox. **Invalid PIDs/URLs abort the recording
+  entirely** — a bare `--get` with no selection would download the ENTIRE
+  cache. `--pid-recursive` is appended once, only when a PID (not a URL) was
+  collected.
 - **Progress row**: `Progress:` label + determinate progress bar + % label.
-- **Log console**: read-only `NSTextView` (all get_iplayer output streams here).
-- **Status label** at bottom + a **Stop** button at the bottom right (enabled
-  while busy, sends SIGINT via `GetIPlayerRunner.stop()` to gracefully interrupt
-  the running process). The **Download** button on the PID bar is the window's
-  default button (blue) via `keyEquivalent = "\r"`.
+- **Log console**: read-only `NSTextView` — wraps long lines (container width
+  tracking) and is capped at ~200k characters so long sessions don't grow it
+  without bound.
+- **Status label** + **Stop** button (bottom right; enabled while busy). **⌘.**
+  also triggers Stop via the Controls menu. The "Download" button on the PID
+  bar is the window's default button (`keyEquivalent = "\r"`).
 
 ### How commands are built
 
 - **Search**: `get_iplayer --type=<type> --listformat="<index>|<pid>|...|<guidance>" <regex>`
-  → parsed into `Programme` rows. `--listformat` uses sanitize_mode 2 (raw values),
-  so `|` is a safe delimiter.
+  → parsed into `Programme` rows. Search terms starting with `--` are rejected
+  (get_iplayer would read them as options).
 - **Download selected**: `get_iplayer <index>... --get --output=<dir> [--quality=<q>] [flags] --log-progress`
 - **Download by PID/URL**: `get_iplayer --pid=<pid>|--url=<url> --get ...`
-  (adds `--pid-recursive` when the whole-series checkbox is ticked and a PID is used)
+  (adds `--pid-recursive` once when the whole-series checkbox is ticked AND a
+  PID was collected)
 - **Refresh**: `get_iplayer --refresh --type=<type>`
-- **Help**: `get_iplayer --help` (menu: Help → "Print Get_iPlayer Help")
+- **Help**: `get_iplayer --help` (menu: Help → "Print Get_iPlayer Help"; the
+  item is disabled while busy)
 
 ### Progress bar
 
-`--log-progress` forces get_iplayer to emit progress lines even though output is
-piped (not a terminal). Lines match `^\s*(\d+(?:\.\d+)?)% of ~`; the bar resets
-to 0 on a new `INFO: Downloading ...` line. Non-progress lines go to the log.
+- `--log-progress` forces progress lines even though output is piped; one
+  precompiled regex (`ViewController.progressRegex` via `parseProgressLine`)
+  matches `^\s*(\d+(?:\.\d+)?)% of ~`.
+- The bar resets to 0% whenever an `INFO: Downloading` line arrives — the reset
+  lives in `handleOutputLine`'s non-progress branch, NOT in `updateProgress`
+  (an old dead branch there was removed; don't put it back).
+- Completions are honest: `stopRequested` → "stopped by user";
+  `terminationStatus != 0` → failure with exit code; otherwise success. The
+  bar only reaches 100% on a real finish.
+- VoiceOver: 25/50/75% milestones are announced once per programme
+  (`lastProgressMilestone`, reset per programme in `handleOutputLine`).
 
 ### Binary path
 
@@ -110,16 +141,33 @@ binary is at `/usr/local/bin/get_iplayer`. If the path ever changes, edit the
 - **Runtime input validation** (defense in depth):
   - Custom flags field only accepts `-`-prefixed tokens of safe chars
     (`[A-Za-z0-9-_=./]`); unsafe tokens are dropped + logged.
-  - PID/URL field only accepts alphanumeric PIDs or well-formed http(s) URLs.
+  - PID/URL field only accepts alphanumeric PIDs or well-formed http(s) URLs,
+    and a recording with nothing valid aborts instead of running `--get`.
+  - Search terms starting with `--` are rejected (would be read as options).
 - **Static scan**: `python3 scripts/security_scan.py` (exit 0 = pass). Runs in
   CI via `.github/workflows/security.yml`. If a scan flags a false positive, add
   it to `ALLOWED` in the script.
 
 ## Git state
 
-- Local repo initialized in `gui/`; branch `main`.
+- Local repo in `gui/`, branch `main`; remote `origin` =
+  `https://github.com/eps-epsiloneridani/get_iplayer_gui.git`.
+- **Local main is ahead of origin/main** — the optimisation-pass commits below
+  are NOT pushed. Push only after the user signs off.
+- Local git identity: `eps-epsiloneridani` / `eps-epsiloneridani@users.noreply.github.com`.
 - Commits (newest first):
-  - `ba2e528` Revert PID tab override; keep natural tab to Download
+  - (current) Section 6: hygiene + AGENTS.md refresh
+  - `0c16ca7` Section 6: reject "--" search terms, append --pid-recursive once
+  - `065d895` Section 4: precompiled progress regex, cached log formatter, log cap
+  - `23835e5` Section 3: contentMinSize + compressible table height, live progress reset, canonical log text sizing
+  - `fcf2939` Section 5: accessibility — selection/in-progress announcements, Cmd-. Stop, flags-bar group, remaining labels
+  - `a015f83` Section 2: runner robustness — launch cleanup, no pipe-drain hang, flush tail line, isRunning guard on stop
+  - `4e7a67d` Section 1 fix: Help greying needs @objc validateMenuItem (AppKit ignores plain Swift validate(_:))
+  - `21c6688` Section 1: refuse invalid PID/URL, serialise Help, honest exit-status reporting
+  - `394474d` Add optimisation plan with per-section tracking
+  - `1e40a73` Update GetIPlayerGUI.swift
+  - `90e0643` Update AGENTS.md to reflect latest accessibility, keyboard, and git state
+  - `ba2e528` Revert PID tab override; keep natural tab to Download button
   - `a7ee85f` Fix accessibility API usage (setAccessibilityLabel / announcement keys)
   - `0d749a8` Add accessibility labels, Window/Hide menus, Return-key scoping, VoiceOver announcements
   - `9e74b49` Make Download the Return-key default button; Download Selected no longer is
@@ -132,60 +180,108 @@ binary is at `/usr/local/bin/get_iplayer`. If the path ever changes, edit the
   - `7137703` Add security scan, CI workflow, and input validation
   - `a1657e1` This is the initial commit
   - `dff8070` Initial commit
-- **Not yet pushed to GitHub.** The `origin` remote was removed earlier because
-  the repo didn't exist on GitHub yet. To publish: create the empty repo on
-  GitHub, then `git remote add origin https://github.com/eps-epsiloneridani/get_iplayer_gui.git && git push -u origin main`.
-  (Or use GitHub Desktop → "Publish repository".)
-- Local git identity: `eps-epsiloneridani` / `eps-epsiloneridani@users.noreply.github.com`.
+
+## The optimisation pass (PLAN.md)
+
+A full review + optimisation pass tracked in `PLAN.md` — all six sections DONE.
+Highlights (details and rationale in PLAN.md):
+
+- **S1 — Critical**: invalid PID/URL aborts before `--get` (previously a typo
+  could download the ENTIRE cache); Help serialised with the busy protocol;
+  completions report exit codes and "stopped by user" instead of always
+  "finished".
+- **S2 — Runner**: no pipe-drain hang, launch-failure cleanup, tail-line
+  flush, `isRunning` guard on `stop()`.
+- **S5 — Accessibility**: start/in-progress/completion announcements,
+  selection feedback, 25/50/75% milestones, ⌘. Stop menu item, flags-bar
+  VoiceOver group, labels/help on all controls.
+- **S3 — Layout**: `window.contentMinSize` (720×520), compressible table
+  height (999 priority, ≥150 floor), canonical log text sizing (wraps, scrolls).
+- **S4 — Performance**: one precompiled progress regex (`parseProgressLine`),
+  shared log timestamp formatter, log capped at ~200k characters.
+- **S6 — Hygiene**: `--` search terms rejected; `--pid-recursive` appended once.
+
+## AppKit gotchas (verified empirically — do not relearn these)
+
+1. `accessibilityLabel` is a read-only method in AppKit, not a settable
+   property — use `setAccessibilityLabel(_:)`.
+2. **Menu-item validation requires `@objc func validateMenuItem(_:)`.** A
+   plain Swift `validate(_:)` (NSUserInterfaceItemValidation) is never
+   consulted by AppKit menu validation — it isn't even visible at the
+   `validateUserInterfaceItem:` selector without explicit protocol
+   conformance. (Discovered when the Help item refused to grey out.)
+3. **There is no runtime setter for accessibility element-ness** (unlike
+   UIKit): `isAccessibilityElement` is a read-only method. Subclass a view to
+   make it an element/group (see `GroupedStackView`).
+4. `NSTextView.textContainer` is annotated `NSTextContainer?` in this SDK —
+   bind it in an `if let` rather than dotting through it.
 
 ## Feature history / decisions
 
 - **Deployment target** pinned to `arm64-apple-macosx13.0` in `build.sh` — the
   toolchain defaulted to `macosx28.0` which broke launching on macOS 27.
 - **Edit menu** added because without it, Cut/Copy/Paste didn't work in text fields.
+- **Controls menu** added (Stop, ⌘.) so keyboard-only users can interrupt a
+  run without tabbing to the Stop button.
 - **Flags bar** added so users can pass flags like `--force`; the `Flags:` label
   must be added to the stack **before** the checkboxes to appear on the left.
 - **Progress bar** added for downloads; `--log-progress` is always appended.
 - Button labels: "Download Selected" (record selected), "Download" (record by
-  PID). The "Download" button is the window's default button (`keyEquivalent = "\r"`)
-  so it activates on Return and appears blue. Do NOT use `bezelColor`/`contentTintColor`
-  to colour it — that was tried then reverted.
-- **Help menu** item "Print Get_iPlayer Help" runs `get_iplayer --help` into the log.
+  PID). The "Download" button is the window's default button
+  (`keyEquivalent = "\r"`) so it activates on Return and appears blue. Do NOT
+  use `bezelColor`/`contentTintColor` to colour it — that was tried then
+  reverted.
+- **Help menu** item "Print Get_iPlayer Help" runs `get_iplayer --help` into
+  the log; disabled while busy. Help/Stop menu availability is validated in the
+  view controller's `validateMenuItem(_:)` (must be `@objc`, see gotcha 2).
+- **Window sizing**: `contentMinSize` 720×520. The table height constraint
+  (300pt) runs at priority 999 with a required ≥150 floor so it compresses
+  gracefully instead of breaking Auto Layout. Extra space when the window
+  grows goes to the log. `setupMainMenu()` is called AFTER the view controller
+  is created so menu items get real targets (nil targets only work by
+  responder-chain luck).
 
 ## Accessibility & keyboard
 
-- **Menus**: App menu now has Hide (Cmd+H), Hide Others (Cmd+Option+H), Show
-  All; a **Window** menu provides Minimize (Cmd+M) and Zoom.
+- **Menus**: App menu (Hide ⌘H / Hide Others ⌥⌘H / Show All), Edit menu,
+  **Controls** menu (Stop ⌘.), Window menu (Minimize ⌘M / Zoom), Help menu.
 - **Return key**: the "Download" button is the default button. Return in the
   Search field triggers Search; Return in Output/Custom-flags fields is consumed
-  (does nothing) so it doesn't fire Download; Return in the PID field fires
-  Download.
-- **VoiceOver labels**: use `setAccessibilityLabel(_:)` (note: `accessibilityLabel`
-  is a read-only method in AppKit, not a settable property — assigning it won't compile).
-  Applied to search/output/custom-flags/PID fields, both popups, the progress bar,
-  progress label and status label.
-- **Live announcements**: `announce(_:)` posts `NSAccessibility.NotificationUserInfoKey.announcement`
-  VoiceOver announcements on search/refresh/help/record completion and on guard errors.
+  (so it doesn't fire Download); Return in the PID field fires Download.
+- **VoiceOver labels** (`setAccessibilityLabel(_:)`): search/output/custom/
+  PID fields, both popups, progress bar, progress label, status label, log
+  console ("Log console"), spinner ("Working"), table ("Search results").
+  Help text (`setAccessibilityHelp`) on Stop, recursive checkbox, quality and
+  type popups.
+- **Table**: label "Search results" plus `accessibilityValue` "N results"
+  (updated in `parseResults`).
+- **Announcements**: `announce(_:priority:)` posts VoiceOver announcements —
+  `.high` (interrupts speech) for completions and guard errors, `.medium`
+  (queues) for in-progress and selection feedback. Coverage: search/refresh/
+  help/record starts AND completions, row selection (title or count),
+  per-programme "Downloading <name>", 25/50/75% milestones, stop requests.
+- **Flags bar grouping**: `GroupedStackView` with role `.group`, label
+  "Recording flags", `accessibilityChildren` = arrangedSubviews (gotcha 3).
 - **Initial focus**: the search field becomes first responder at launch
   (`ViewController.focusSearch()`).
-- **Table** has `accessibilityLabel = "Search results"` (via `setAccessibilityLabel`);
-  log/status fonts raised to 12pt.
-- **Tab order**: left-to-right natural order. Tab from the PID field goes to the
-  **Download** button (default). The recursive checkbox follows it. A `nextKeyView`
-  override to skip Download was added then **reverted** — the user wants the
-  natural tab-to-Download behaviour.
+- **Tab order**: left-to-right natural order. Tab from the PID field goes to
+  the **Download** button (default). The recursive checkbox follows it. Do NOT
+  override `nextKeyView` to skip Download — that was tried and reverted.
 
 ## Common tasks / where to edit
 
-- **Add a UI control**: declare a property near the other `private let` fields
-  (~line 130-160), build it in `buildUI()`, add to the relevant `NSStackView`,
-  and wire an action.
+- **Add a UI control**: declare a property near the other `private let` fields,
+  build it in `buildUI()`, add to the relevant `NSStackView`, and wire an action.
 - **Add a flag checkbox**: add a property, add it to the `for cb in [...]` loop
   in the flags bar, and add `if cb.state == .on { args.append("--flag") }` in
   `appendCommonRecordArgs`.
 - **Change binary path**: `viewDidLoad`.
-- **Change menu items**: `setupMainMenu()` in `AppDelegate`.
-- **Change progress parsing**: `isProgressLine` / `updateProgress`.
+- **Change menu items**: `setupMainMenu()` in `AppDelegate` (note: called after
+  the view controller exists — keep it that way).
+- **Change progress parsing**: `parseProgressLine` / `updateProgress` (the
+  regex lives in the cached `ViewController.progressRegex`).
+- **Change announcements**: `announce(_:priority:)` and its call sites.
+- **Change the log cap**: `ViewController.logCharacterLimit`.
 
 ## Gotchas
 
@@ -194,3 +290,5 @@ binary is at `/usr/local/bin/get_iplayer`. If the path ever changes, edit the
 - The programme cache is empty until you click **Refresh Cache** (needs BBC
   network access).
 - Recordings default to the Movies folder.
+- Long-running sessions: the log caps itself (~200k chars) — trimming is
+  expected, not a bug.

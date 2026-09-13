@@ -1,6 +1,7 @@
 # Optimisation Plan — GetIPlayerGUI.swift
 
-Written after a full code review. Baseline: commit `1e40a73`, `./build.sh` passes,
+**ALL SIX SECTIONS COMPLETE.** Written after a full code review. Baseline:
+commit `1e40a73`, `./build.sh` passes,
 `python3 scripts/security_scan.py` passes.
 
 **Review summary:** solid foundations (no-shell argument-array Process runs,
@@ -134,9 +135,10 @@ Return-key scoping, tooltips on Stop/recursive. Gaps now closed:
 2. [x] **Append `--pid-recursive` once**, not per-PID in the loop — tracked
    via `sawPID` and appended after validation, only when a PID (never a URL)
    was collected.
-3. [ ] **Update AGENTS.md** — new commits, Section 1–6 changes. Its "Git
-   state" section is already stale (it claims the branch is unpushed; origin
-   exists and `main` is up to date with it).
+3. [x] **Update AGENTS.md** — full refresh: new commits (Section 1–6),
+   optimisation-pass summary, AppKit-gotcha list, updated accessibility/layout
+   sections, "where to edit" pointers. Git state now accurate: local main is
+   ahead of origin/main; push only after user sign-off.
 
 ---
 
