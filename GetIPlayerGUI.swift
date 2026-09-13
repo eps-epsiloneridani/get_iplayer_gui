@@ -50,7 +50,11 @@ final class GetIPlayerRunner {
         lock.lock()
         let process = runningProcess
         lock.unlock()
-        process?.interrupt()
+        // Only interrupt a live process: interrupt() raises on a process that
+        // never launched or has already exited (a small race window exists
+        // between process exit and the completion clearing the reference).
+        guard let process = process, process.isRunning else { return }
+        process.interrupt()
     }
 
     /// Runs get_iplayer on a background queue. `onOutput` is called on the main
@@ -87,25 +91,37 @@ final class GetIPlayerRunner {
             do {
                 try process.run()
             } catch {
+                // Launch failed: clear the stale reference or stop() could later
+                // try to interrupt a never-launched process (which raises), and
+                // release the pipe handler before bailing out.
+                handle.readabilityHandler = nil
+                self.lock.lock()
+                if self.runningProcess === process { self.runningProcess = nil }
+                self.lock.unlock()
                 DispatchQueue.main.async {
                     completion("Error launching get_iplayer: \(error.localizedDescription)", -1)
                 }
                 return
             }
 
+            // The child holds its own dup of the write end; close our copy so
+            // the pipe reaches EOF once get_iplayer (and any helpers it
+            // spawns, e.g. ffmpeg) have exited.
+            try? pipe.fileHandleForWriting.close()
+
             process.waitUntilExit()
+
+            // NOTE: deliberately NO readDataToEndOfFile() drain here. If a child
+            // of get_iplayer (e.g. ffmpeg) outlives it, the pipe never reaches
+            // EOF and that call would block forever — the completion would
+            // never fire and the UI would stay stuck "busy". The
+            // readabilityHandler above has already streamed everything written
+            // before exit, so we complete from the exit path instead of waiting
+            // for EOF.
             handle.readabilityHandler = nil
             self.lock.lock()
-            self.runningProcess = nil
+            if self.runningProcess === process { self.runningProcess = nil }
             self.lock.unlock()
-            // Drain any remaining data
-            let remaining = handle.readDataToEndOfFile()
-            if remaining.count > 0, let s = String(data: remaining, encoding: .utf8) {
-                output += s
-                if let onOutput = onOutput {
-                    DispatchQueue.main.async { onOutput(s) }
-                }
-            }
 
             DispatchQueue.main.async {
                 completion(output, process.terminationStatus)
@@ -674,14 +690,15 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
         runner.run(arguments: args, onOutput: { [weak self] chunk in
             guard let self = self else { return }
             lineBuffer.process(chunk) { line in
-                if self.isProgressLine(line) {
-                    self.updateProgress(line)
-                } else {
-                    self.appendLog(line)
-                }
+                self.handleOutputLine(line)
             }
         }) { [weak self] _, status in
             guard let self = self else { return }
+            // Emit the final partial line (no trailing newline) so the log
+            // doesn't lose get_iplayer's last output.
+            lineBuffer.flush { line in
+                self.handleOutputLine(line)
+            }
             self.setBusy(false)
             if self.stopRequested {
                 self.statusLabel.stringValue = "Recording stopped by user."
@@ -699,6 +716,16 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     }
 
     // MARK: Progress parsing
+
+    /// Routes one complete line of get_iplayer output: progress lines drive
+    /// the progress bar, everything else goes to the log.
+    private func handleOutputLine(_ line: String) {
+        if isProgressLine(line) {
+            updateProgress(line)
+        } else {
+            appendLog(line)
+        }
+    }
 
     private func isProgressLine(_ line: String) -> Bool {
         return line.range(of: #"^\s*\d+(?:\.\d+)?% of ~"#, options: .regularExpression) != nil

@@ -38,20 +38,29 @@ in Section 6 when done.
    flag (set in `stopTapped`, cleared when a new operation sets busy) so
    completions report "stopped by user" / "failed (exit N)" / success.
 
-## Section 2 — Process runner robustness
+## Section 2 — Process runner robustness ✅ DONE
 
-1. [ ] **Launch-failure cleanup** — in `GetIPlayerRunner.run`, the `catch`
+1. [x] **Launch-failure cleanup** — in `GetIPlayerRunner.run`, the `catch`
    returns without clearing `runningProcess`, leaking a never-launched
    Process that `stop()` would later try to interrupt (raises an exception).
-   Clear it in the error path.
-2. [ ] **Remove the `readDataToEndOfFile()` drain after `waitUntilExit`** —
+   Clear it in the error path (identity-checked) and release the pipe
+   handler before bailing out.
+2. [x] **Remove the `readDataToEndOfFile()` drain after `waitUntilExit`** —
    get_iplayer spawns children (ffmpeg etc.) that inherit the pipe write end;
    if they outlive the parent, EOF never arrives and the drain blocks
    forever: completion never fires, UI stuck "busy". The `readabilityHandler`
-   has already delivered the output; drop the drain.
-3. [ ] **Call `LineBuffer.flush`** — defined but never called; the final
-   partial line of a download (no trailing newline) is lost. Flush in the
-   record completion handler.
+   has already delivered the output; dropped the drain (and documented the
+   small accepted race: a chunk dispatched-but-not-run at exit could be
+   missed — get_iplayer writes its final line well before exiting).
+3. [x] **Call `LineBuffer.flush`** — was never called; the final partial line
+   of a download (no trailing newline) was lost. Now flushed in the record
+   completion via a new `handleOutputLine(_:)` router shared with the stream
+   path (removes the duplicated progress/log routing).
+
+Also hardened in this pass: `stop()` now checks `isRunning` before
+`interrupt()` (race window between process exit and completion);
+`GetIPlayerRunner` also closes the parent's copy of the pipe write end after
+launch so EOF actually arrives when the child exits.
 
 ## Section 3 — Layout & UX
 
