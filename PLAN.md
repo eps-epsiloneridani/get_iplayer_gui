@@ -128,11 +128,12 @@ Return-key scoping, tooltips on Stop/recursive. Gaps now closed:
 
 ## Section 6 — Hygiene & docs
 
-1. [ ] **Search terms starting with `--`** would be parsed by get_iplayer as
+1. [x] **Search terms starting with `--`** would be parsed by get_iplayer as
    flags (not shell injection — argument array — but wrong behaviour).
-   Reject or quote such terms.
-2. [ ] **Append `--pid-recursive` once**, not per-PID in the loop — harmless
-   today with a single PID, fragile tomorrow.
+   Now rejected up front with log + VoiceOver message.
+2. [x] **Append `--pid-recursive` once**, not per-PID in the loop — tracked
+   via `sawPID` and appended after validation, only when a PID (never a URL)
+   was collected.
 3. [ ] **Update AGENTS.md** — new commits, Section 1–6 changes. Its "Git
    state" section is already stale (it claims the branch is unpushed; origin
    exists and `main` is up to date with it).

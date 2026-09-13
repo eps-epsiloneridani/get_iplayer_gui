@@ -555,6 +555,14 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
             announce("Please enter a search term.")
             return
         }
+        // A leading "--" would be parsed by get_iplayer as an option rather
+        // than a search term (no shell risk — arguments are an array — just
+        // wrong behaviour), so refuse it up front.
+        guard !term.hasPrefix("--") else {
+            appendLog("Search term rejected: terms starting with \"--\" are read as options by get_iplayer.")
+            announce("Search terms starting with double dash are not supported.")
+            return
+        }
         let type = typePopup.titleOfSelectedItem ?? "tv"
         runSearch(term: term, type: type)
     }
@@ -666,6 +674,7 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     private func record(pids: [String]) {
         guard !pids.isEmpty else { return }
         var args: [String] = []
+        var sawPID = false
         for p in pids {
             let cleaned = p.trimmingCharacters(in: .whitespacesAndNewlines)
             if cleaned.hasPrefix("http") {
@@ -683,14 +692,16 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
                 // BBC PIDs are alphanumeric.
                 if cleaned.range(of: #"^[A-Za-z0-9]+$"#, options: .regularExpression) != nil {
                     args.append("--pid=\(cleaned)")
-                    // --pid-recursive only applies with --pid (not --url).
-                    if pidRecursiveCheckbox.state == .on {
-                        args.append("--pid-recursive")
-                    }
+                    sawPID = true
                 } else {
                     appendLog("Warning: ignoring invalid PID: \(p)")
                 }
             }
+        }
+        // --pid-recursive is a single global switch: append it once, and only
+        // when an actual PID (never a URL) was collected.
+        if pidRecursiveCheckbox.state == .on && sawPID {
+            args.append("--pid-recursive")
         }
         // Abort if nothing valid was collected: `--get` with no --pid/--url
         // selection would make get_iplayer download the ENTIRE cache.
