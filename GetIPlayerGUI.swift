@@ -872,8 +872,14 @@ final class ViewController: NSViewController, NSTableViewDataSource, NSTableView
     /// Disables the Help menu item while a get_iplayer process is running so it
     /// can't run concurrently and clobber the runner's process tracking.
     /// All other items keep their default enabled state.
-    func validate(_ item: NSValidatedUserInterfaceItem) -> Bool {
-        if item.action == #selector(showHelp) {
+    ///
+    /// NOTE: this must be `@objc func validateMenuItem(_:)` — AppKit menu
+    /// validation looks up the `validateMenuItem:` selector, and a plain Swift
+    /// `validate(_:)` (NSUserInterfaceItemValidation) is never consulted unless
+    /// the class declares explicit protocol conformance (verified empirically;
+    /// see PLAN.md, Section 1).
+    @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(showHelp) {
             return !isBusy
         }
         return true

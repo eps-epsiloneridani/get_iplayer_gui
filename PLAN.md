@@ -24,9 +24,14 @@ in Section 6 when done.
 2. [x] **Serialise Help** — `showHelp()` ignored `isBusy`, so Help could run
    during a download, overwrite the runner's single `runningProcess`, and break
    the Stop button. Fix: busy guard + go through `setBusy`; disable the Help
-   menu item while busy via `validate(_:)`. (Also folds in old Section 5.6:
-   move `setupMainMenu()` after VC creation so the Help item gets a real
-   target instead of a nil target that only worked via responder-chain luck.)
+   menu item while busy. **Follow-up fix (user test caught it):** menu-item
+   validation requires `@objc func validateMenuItem(_:)` — AppKit looks up the
+   legacy `validateMenuItem:` selector and never calls a plain Swift
+   `validate(_:)` (NSUserInterfaceItemValidation) without explicit protocol
+   conformance. Verified empirically with an isolated NSMenu test harness.
+   (Also folds in old Section 5.6: move `setupMainMenu()` after VC creation
+   so the Help item gets a real target instead of a nil target that only
+   worked via responder-chain luck.)
 3. [x] **Honest status reporting** — completions ignored `terminationStatus`,
    so failures announced "Cache refreshed."/"Recording finished." and Stop
    still said "finished". Fix: check status everywhere; new `stopRequested`
